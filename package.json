@@ -1,9 +1,0 @@
-{
-  "name": "foveated-lidar-3d-model",
-  "private": true,
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {"dev": "vite", "build": "vite build", "preview": "vite preview"},
-  "dependencies": {"@astrojs/react": "latest", "astro": "latest", "react": "latest", "react-dom": "latest", "three": "latest"},
-  "devDependencies": {}
-}
