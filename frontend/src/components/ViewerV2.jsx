@@ -8,7 +8,7 @@ const API = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 const norm = (a) => ((a % 360) + 360) % 360;
 const degToRad = (d) => (d * Math.PI) / 180;
 
-function OneDView({ heading }) {
+function OneDView({ heading, pitch }) {
   const mount = useRef(null);
   const dataRef = useRef(null);
   const viewRef = useRef({ center: 0, scale: 70 });
@@ -73,13 +73,14 @@ function OneDView({ heading }) {
     const x = Number(p[0] || 0), y = Number(p[1] || 0), z = Number(p[2] || 0);
     if (axis === 'y') return y;
     const a = degToRad(norm(heading));
-    return x * Math.cos(a) + z * Math.sin(a);
+    // Screen-horizontal coordinate of the actual 3D camera at this azimuth.
+    return x * Math.cos(a) - z * Math.sin(a);
   });
   const centroid = dataRef.current?.centroid;
   const centroidProjected = Array.isArray(centroid)
     ? axis === 'y'
       ? Number(centroid[1] || 0)
-      : Number(centroid[0] || 0) * Math.cos(degToRad(norm(heading))) + Number(centroid[2] || 0) * Math.sin(degToRad(norm(heading)))
+      : Number(centroid[0] || 0) * Math.cos(degToRad(norm(heading))) - Number(centroid[2] || 0) * Math.sin(degToRad(norm(heading)))
     : null;
   const min = projected.length ? Math.min(...projected) : -3;
   const max = projected.length ? Math.max(...projected) : 3;
@@ -94,7 +95,7 @@ function OneDView({ heading }) {
   for (let v = start; v <= end + tickStep; v += tickStep) ticks.push(Number(v.toFixed(3)));
 
   const axisLabel = axis.toUpperCase();
-  const projectionLabel = axis === 'x' ? `X′ = X cos(${Math.round(heading)}°) + Z sin(${Math.round(heading)}°)` : 'Y′ = Y';
+  const projectionLabel = axis === 'x' ? `X′ = X cos(${Math.round(heading)}°) − Z sin(${Math.round(heading)}°)` : 'Y′ = Y';
 
   return <article className="view-card one-d-card">
     <div className="card-head"><span>1D</span><small>ONE-DIMENSIONAL SPATIAL PROJECTION · {axisLabel}-AXIS</small><span className="angle-readout">{String(Math.round(heading)).padStart(3, '0')}°</span></div>
@@ -111,7 +112,7 @@ function OneDView({ heading }) {
       {centroidProjected !== null && <i className="one-d-centroid" style={axis === 'x'
         ? { left: `${toPercent(centroidProjected)}%`, top: '50%' }
         : { left: '50%', top: `${100 - toPercent(centroidProjected)}%` }
-      }/>}
+      />}
       <span className="one-d-sync-indicator">● 3D SYNC · {Math.round(heading)}°</span>
       <span className="one-d-space-axis-label">1D SPACE · {axisLabel} · PAN + ZOOM · {projectionLabel}</span>
       {!points.length && <span className="one-d-viewport-hint">LOADING BACKEND POINTS…</span>}
@@ -240,5 +241,5 @@ export default function ViewerV2(){
   const rotateBy=(v)=>{if(threeRotateRef.current)threeRotateRef.current(v);else handleThreeHeading(threeHeading+v);};
   const resetAll=()=>{if(threeResetRef.current)threeResetRef.current();else handleThreeHeading(180);};
 
-  return <main className="app-shell"><header className="hero"><div><h1>Foveated LiDAR Mapping</h1><p>3D model · 1D profile · 2D projection · 2.5D range map</p></div><div className="hero-meta"><b>● 3D RESET · 180° DEFAULT</b><small>0° TOP · 90° RIGHT · 180° BOTTOM · 270° LEFT</small></div></header><section className="toolbar"><span className="badge">4 SPACES</span><span className="badge">3D → 1D → 2D → 2.5D</span><span className="grow"/><button className={`sync-button ${sync?'sync-active':'sync-off'}`} type="button" onClick={toggleSync}>• SYNC {sync?'ON':'OFF'}</button><button type="button" onClick={()=>rotateBy(-5)}>↶ 5°</button><button type="button" onClick={()=>rotateBy(5)}>5° ↷</button><button type="button" onClick={resetAll}>RESET · 180°</button></section><section className="view-grid"><ThreeView onHeading={handleThreeHeading} resetRef={threeResetRef} rotateRef={threeRotateRef}/><OneDView heading={heading}/><TwoDView heading={heading}/><TwoFiveDView heading={heading}/></section><section className="analysis panel"><div><span className="section-kicker">FOV / ORIENTATION</span><strong>{Math.round(threeHeading)}°</strong><small>{sync?'linked heading':'3D heading · sync paused'}</small></div><div><span className="section-kicker">INPUT</span><strong>RAW CUBOID</strong><small>backend/data/raw/cube.json</small></div><div><span className="section-kicker">CENTROID</span><strong>BACKEND COMPUTED</strong><small>geometric center of raw vertices · Y = 0</small></div></section></main>;
+  return <main className="app-shell"><header className="hero"><div><h1>Foveated LiDAR Mapping</h1><p>3D model · 1D profile · 2D projection · 2.5D range map</p></div><div className="hero-meta"><b>● 3D RESET · 180° DEFAULT</b><small>0° TOP · 90° RIGHT · 180° BOTTOM · 270° LEFT</small></div></header><section className="toolbar"><span className="badge">4 SPACES</span><span className="badge">3D → 1D → 2D → 2.5D</span><span className="grow"/><button className={`sync-button ${sync?'sync-active':'sync-off'}`} type="button" onClick={toggleSync}>• SYNC {sync?'ON':'OFF'}</button><button type="button" onClick={()=>rotateBy(-5)}>↶ 5°</button><button type="button" onClick={()=>rotateBy(5)}>5° ↷</button><button type="button" onClick={resetAll}>RESET · 180°</button></section><section className="view-grid"><ThreeView onHeading={handleThreeHeading} resetRef={threeResetRef} rotateRef={threeRotateRef}/><OneDView heading={heading} pitch={0}/><TwoDView heading={heading}/><TwoFiveDView heading={heading}/></section><section className="analysis panel"><div><span className="section-kicker">FOV / ORIENTATION</span><strong>{Math.round(threeHeading)}°</strong><small>{sync?'linked heading':'3D heading · sync paused'}</small></div><div><span className="section-kicker">INPUT</span><strong>RAW CUBOID</strong><small>backend/data/raw/cube.json</small></div><div><span className="section-kicker">CENTROID</span><strong>BACKEND COMPUTED</strong><small>geometric center of raw vertices · Y = 0</small></div></section></main>;
 }
