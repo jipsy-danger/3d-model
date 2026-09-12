@@ -1,20 +1,34 @@
+import json
 import math
+from pathlib import Path
+
+RAW_INPUT = Path(__file__).resolve().parents[2] / "data" / "raw" / "cube.json"
 
 
-def build_demo_frame(size: float = 2.3, samples: int = 32):
-    half = size / 2.0
+def load_raw_cube():
+    with RAW_INPUT.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def build_demo_frame(samples: int = 32):
+    raw = load_raw_cube()
+    sx, sy, sz = raw["size"]
+    half_x, half_y, half_z = sx / 2.0, sy / 2.0, sz / 2.0
     points = []
     for face in range(6):
         for i in range(samples):
             for j in range(samples):
-                a = -half + size * i / (samples - 1)
-                b = -half + size * j / (samples - 1)
-                if face == 0: p = [half, a, b]
-                elif face == 1: p = [-half, a, b]
-                elif face == 2: p = [a, half, b]
-                elif face == 3: p = [a, -half, b]
-                elif face == 4: p = [a, b, half]
-                else: p = [a, b, -half]
+                u = i / (samples - 1)
+                v = j / (samples - 1)
+                x = -half_x + sx * u
+                y = -half_y + sy * v
+                z = -half_z + sz * v
+                if face == 0: p = [half_x, y, z]
+                elif face == 1: p = [-half_x, y, z]
+                elif face == 2: p = [x, half_y, z]
+                elif face == 3: p = [x, -half_y, z]
+                elif face == 4: p = [x, y, half_z]
+                else: p = [x, y, -half_z]
                 points.append(p)
 
     polar = []
@@ -23,17 +37,20 @@ def build_demo_frame(size: float = 2.3, samples: int = 32):
         r = math.hypot(x, z)
         az = (math.degrees(math.atan2(x, z)) + 360.0) % 360.0
         el = math.degrees(math.atan2(y, max(r, 1e-9)))
-        polar.append({"azimuth": az, "elevation": el, "range": math.sqrt(x*x+y*y+z*z)})
+        d = math.sqrt(x * x + y * y + z * z)
+        polar.append({"azimuth": az, "elevation": el, "range": d})
         ring = min(15, max(0, int((el + 90) / 180 * 16)))
         col = min(71, int(az / 360 * 72))
         old = grid[ring][col]
-        d = math.sqrt(x*x+y*y+z*z)
-        if old is None or d < old: grid[ring][col] = d
+        if old is None or d < old:
+            grid[ring][col] = d
 
     return {
-        "input": {"type": "cube", "size_m": size},
+        "input": raw,
+        "raw_input": {"path": "backend/data/raw/cube.json", "vertices": raw["vertices"]},
         "points": points,
         "point_count": len(points),
+        "centroid": raw["origin"],
         "rings": 16,
         "horizontal_fov_deg": 360,
         "projection_2d": polar,
