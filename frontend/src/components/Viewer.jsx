@@ -55,20 +55,21 @@ function GridView({ heading }) {
 
 function makeDegreeSprite(text) {
   const canvas = document.createElement('canvas');
-  canvas.width = 160;
-  canvas.height = 64;
+  canvas.width = 220;
+  canvas.height = 84;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.font = 'bold 20px monospace';
+  ctx.font = 'bold 32px monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#8fb6c2';
+  ctx.fillStyle = '#b9e9f2';
   ctx.fillText(text, canvas.width / 2, canvas.height / 2);
   const texture = new THREE.CanvasTexture(canvas);
   texture.needsUpdate = true;
+  texture.minFilter = THREE.LinearFilter;
   const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
   const sprite = new THREE.Sprite(material);
-  sprite.scale.set(0.78, 0.31, 1);
+  sprite.scale.set(1.05, 0.40, 1);
   return sprite;
 }
 
@@ -85,7 +86,7 @@ function add3DRuler(scene) {
   const circleGeometry = new THREE.BufferGeometry().setFromPoints(circlePoints);
   rulerGroup.add(new THREE.Line(circleGeometry, new THREE.LineBasicMaterial({ color: 0x477b88, transparent: true, opacity: 0.72 })));
 
-  for (let degree = 0; degree < 360; degree += 10) {
+  for (let degree = 0; degree <= 360; degree += 10) {
     const angle = (degree * Math.PI) / 180;
     const major = degree % 30 === 0;
     const outer = radius + 0.13;
@@ -105,6 +106,11 @@ function add3DRuler(scene) {
       const label = makeDegreeSprite(`${degree}°`);
       const labelRadius = radius + 0.48;
       label.position.set(Math.sin(angle) * labelRadius, -1.43, Math.cos(angle) * labelRadius);
+      // 0° and 360° share the same physical angle; offset 360° slightly so both readings remain visible.
+      if (degree === 360) {
+        label.position.x += 0.22;
+        label.position.z += 0.22;
+      }
       rulerGroup.add(label);
     }
   }
@@ -260,57 +266,50 @@ export default function Viewer() {
       setStatus('3D RENDER ERROR');
     }
 
+    return () => { disposed = true; cleanup(); };
+  }, []);
+
+  useEffect(() => {
+    let socket;
     try {
-      wsRef.current = new WebSocket(API.replace(/^http/, 'ws') + '/ws/state');
-      wsRef.current.onopen = () => setStatus('BACKEND · LIVE');
-      wsRef.current.onmessage = (event) => {
+      socket = new WebSocket(API.replace(/^http/, 'ws') + '/ws/view');
+      wsRef.current = socket;
+      socket.onopen = () => setStatus('BACKEND CONNECTED · 3D READY');
+      socket.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
-          if (message.type === 'state' && state.current.sync) {
-            Object.assign(state.current, message.state);
-            setHeading(Math.round(norm(state.current.heading)));
+          if (message.type === 'view_state' && state.current.sync) {
+            setHeading(Math.round(norm(message.heading ?? state.current.heading)));
           }
         } catch {}
       };
     } catch {}
-
-    return () => {
-      disposed = true;
-      cleanup();
-      wsRef.current?.close();
-      wsRef.current = null;
-    };
+    return () => { try { socket?.close(); } catch {} };
   }, []);
 
-  const turn = (delta) => {
-    state.current.heading = norm(state.current.heading + delta);
-    const view = three.current;
-    if (view) {
-      const offset = view.camera.position.clone().sub(view.controls.target);
-      const radius = Math.hypot(offset.x, offset.z);
-      const angle = Math.atan2(offset.x, offset.z) - (delta * Math.PI) / 180;
-      view.camera.position.x = view.controls.target.x + radius * Math.sin(angle);
-      view.camera.position.z = view.controls.target.z + radius * Math.cos(angle);
-      view.controls.update();
-    }
-    publish();
-  };
-
-  const toggleSync = () => {
-    state.current.sync = !state.current.sync;
-    setStatus(state.current.sync ? 'SYNC ON' : 'MANUAL');
+  const rotateBy = (amount) => {
+    state.current.heading = norm(state.current.heading + amount);
+    setHeading(Math.round(state.current.heading));
+    if (state.current.sync) publish();
   };
 
   return (
     <main className="page">
-      <header className="topbar"><div><h1>Foveated LiDAR Mapping</h1><p>3D model · synchronized 2D · synchronized 2.5D</p></div><div className="header-readout"><span className="dot" /> {status}</div></header>
-      <section className="toolbar panel"><div className="pill">3 VIEWS</div><div className="pill muted">360° / 16 RINGS</div><div className="grow" /><button className={state.current.sync ? 'btn active' : 'btn'} onClick={toggleSync}><span className="tiny-dot" /> {state.current.sync ? 'SYNC ON' : 'SYNC OFF'}</button><button className="btn" onClick={() => turn(-5)}>↶ 5°</button><button className="btn" onClick={() => turn(5)}>5° ↷</button></section>
+      <header className="topbar">
+        <div><h1>Foveated LiDAR Mapping</h1><p>3D model · synchronized 2D · synchronized 2.5D</p></div>
+        <div className="header-readout"><span className="dot" />{status}</div>
+      </header>
+      <section className="toolbar panel">
+        <span className="pill">3 VIEWS</span><span className="pill muted">360° / 16 RINGS</span><span className="grow" />
+        <button className={`btn ${state.current.sync ? 'active' : ''}`} onClick={() => { state.current.sync = !state.current.sync; setStatus(state.current.sync ? 'SYNC ON' : 'SYNC OFF'); }}>● SYNC {state.current.sync ? 'ON' : 'OFF'}</button>
+        <button className="btn" onClick={() => rotateBy(-5)}>↶ 5°</button><button className="btn" onClick={() => rotateBy(5)}>5° ↷</button>
+      </section>
       <section className="views">
-        <article className="view-card"><div className="card-head"><span>3D</span><small>Interactive 3D space · orbit · pan · zoom · 360° ruler</small></div><div className="three-stage" ref={mount} /><div className="corner axis">X&nbsp; <i>Y</i>&nbsp; Z</div><div className="card-footer">LEFT DRAG · ORBIT &nbsp;&nbsp; RIGHT DRAG · PAN &nbsp;&nbsp; WHEEL · ZOOM &nbsp;&nbsp; 360° AZIMUTH</div></article>
+        <article className="view-card"><div className="card-head"><span>3D</span><small>Interactive 3D space · orbit · pan · zoom</small></div><div className="three-stage" ref={mount} /><div className="corner axis"><i>X</i> <i>Y</i> <i>Z</i></div><div className="card-footer">Left drag · orbit &nbsp;&nbsp; Right drag · pan &nbsp;&nbsp; Wheel · zoom</div></article>
         <PolarView heading={heading} />
         <GridView heading={heading} />
       </section>
-      <section className="analysis panel"><div><span className="section-kicker">FOV / ORIENTATION</span><strong>{heading}°</strong><small>linked heading</small></div><div><span className="section-kicker">INPUT</span><strong>3D CUBOID</strong><small>primary visualization input</small></div><div><span className="section-kicker">PIPELINE</span><strong>3D → 2D → 2.5D → FRNet</strong><small>processing boundary is backend</small></div></section>
+      <section className="analysis panel"><div><span className="section-kicker">FOV / ORIENTATION</span><strong>{heading}°</strong><small>linked heading</small></div><div><span className="section-kicker">INPUT</span><strong>3D CUBOID</strong><small>generated by backend</small></div><div><span className="section-kicker">PIPELINE</span><strong>3D → 2D → 2.5D → FRNet</strong><small>processing boundary is backend</small></div></section>
     </main>
   );
 }
