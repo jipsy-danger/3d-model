@@ -9,3 +9,7 @@
 .one-d-ticks.axis-x span{top:calc(50% + 12px)}
 .one-d-ticks.axis-y span{left:calc(50% + 15px);transform:translateY(50%)}
 .one-d-line-profile.axis-y{width:2px;height:auto}
+
+/* 1D footer: input only. */
+.one-d-controls button,.one-d-controls .axis-options-label,.one-d-controls .auto-toggle,.one-d-controls .axis-select{display:none}
+.one-d-controls:before{content:"INPUT · BACKEND POINT CLOUD";color:#8aa6af;font:9px ui-monospace,monospace;letter-spacing:.06em}
