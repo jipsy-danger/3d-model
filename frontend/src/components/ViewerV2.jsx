@@ -73,33 +73,24 @@ function ThreeView({ onHeading, resetRef, rotateRef }) {
     const solidMaterial = new THREE.MeshBasicMaterial({ color: 0x788f98, side: THREE.DoubleSide, transparent: false, opacity: 1 });
     const wireMaterial = new THREE.LineBasicMaterial({ color: 0x9bf5ff, transparent: true, opacity: 1 });
     const centroidMaterial = new THREE.MeshBasicMaterial({ color: 0x76ff91, depthTest: false, depthWrite: false });
-    const centroidAxisMaterial = new THREE.LineBasicMaterial({ color: 0x76ff91, transparent: true, opacity: .8, depthTest: false, depthWrite: false });
-    const xAxisMaterial = new THREE.LineBasicMaterial({ color: 0x76ff91, transparent: true, opacity: .72, depthTest: false, depthWrite: false });
-    let solid = null; let wire = null; let centroid = null; let centroidAxis = null; let xAxis = null;
+    const xAxisMaterial = new THREE.LineBasicMaterial({ color: 0x76ff91, transparent: true, opacity: .8, depthTest: false, depthWrite: false });
+    let solid = null; let wire = null; let centroid = null; let xAxis = null;
     const renderRaw = (raw, centroidPoint) => {
       const geometry = buildRawCube(raw); if (!geometry) return;
       if (solid) { scene.remove(solid); solid.geometry.dispose(); }
       if (wire) { scene.remove(wire); wire.geometry.dispose(); }
       if (centroid) { scene.remove(centroid); centroid.geometry.dispose(); }
-      if (centroidAxis) { scene.remove(centroidAxis); centroidAxis.geometry.dispose(); }
       if (xAxis) { scene.remove(xAxis); xAxis.geometry.dispose(); }
       solid = new THREE.Mesh(geometry, solidMaterial); solid.position.set(0, 0, 0); scene.add(solid);
       wire = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), wireMaterial); wire.position.set(0, 0, 0); wire.scale.setScalar(1.001); scene.add(wire);
       const point = Array.isArray(centroidPoint) ? centroidPoint.map(Number) : [0,0,0];
-      const cx = point[0] || 0, cy = point[1] || 0, cz = point[2] || 0;
       xAxis = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(-100, cy, cz),
-        new THREE.Vector3(100, cy, cz),
+        new THREE.Vector3(-100, point[1] || 0, point[2] || 0),
+        new THREE.Vector3(100, point[1] || 0, point[2] || 0),
       ]), xAxisMaterial);
-      xAxis.renderOrder = 998;
+      xAxis.renderOrder = 999;
       scene.add(xAxis);
-      centroidAxis = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(cx, -1.2, cz),
-        new THREE.Vector3(cx, 1.2, cz),
-      ]), centroidAxisMaterial);
-      centroidAxis.renderOrder = 999;
-      scene.add(centroidAxis);
-      centroid = new THREE.Mesh(new THREE.SphereGeometry(.17, 24, 24), centroidMaterial); centroid.position.set(cx, cy, cz); centroid.renderOrder = 1000; scene.add(centroid);
+      centroid = new THREE.Mesh(new THREE.SphereGeometry(.17, 24, 24), centroidMaterial); centroid.position.set(point[0] || 0, point[1] || 0, point[2] || 0); centroid.renderOrder = 1000; scene.add(centroid);
     };
 
     const controls = new OrbitControls(camera, renderer.domElement); controls.target.copy(defaultTarget); controls.enableDamping = true; controls.dampingFactor = .075; controls.enableRotate = true; controls.enablePan = true; controls.enableZoom = true; controls.rotateSpeed = .9; controls.panSpeed = 1; controls.zoomSpeed = 1; controls.minDistance = 3; controls.maxDistance = 35; controls.minPolarAngle = .12; controls.maxPolarAngle = Math.PI - .12; controls.screenSpacePanning = true; controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }; controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
@@ -112,9 +103,9 @@ function ThreeView({ onHeading, resetRef, rotateRef }) {
     if (resetRef) resetRef.current = reset3D; if (rotateRef) rotateRef.current = rotate3D;
     let af = 0; const loop = () => { if (dead) return; controls.update(); renderer.render(scene, camera); af = requestAnimationFrame(loop); }; loop();
     fetch(`${API}/api/frame`).then(r => r.ok ? r.json() : null).then(d => { if (dead || !d?.input?.vertices) return; renderRaw(d.input, d.centroid); }).catch(() => {});
-    return () => { dead = true; cancelAnimationFrame(af); ro.disconnect(); controls.removeEventListener('change', changed); renderer.domElement.removeEventListener('contextmenu', onContextMenu); controls.dispose(); if (solid) solid.geometry.dispose(); if (wire) wire.geometry.dispose(); if (centroid) centroid.geometry.dispose(); if (centroidAxis) centroidAxis.geometry.dispose(); if (xAxis) xAxis.geometry.dispose(); solidMaterial.dispose(); wireMaterial.dispose(); centroidMaterial.dispose(); centroidAxisMaterial.dispose(); xAxisMaterial.dispose(); base.geometry.dispose(); base.material.dispose(); renderer.dispose(); if (resetRef && resetRef.current === reset3D) resetRef.current = null; if (rotateRef && rotateRef.current === rotate3D) rotateRef.current = null; root.innerHTML = ''; };
+    return () => { dead = true; cancelAnimationFrame(af); ro.disconnect(); controls.removeEventListener('change', changed); renderer.domElement.removeEventListener('contextmenu', onContextMenu); controls.dispose(); if (solid) solid.geometry.dispose(); if (wire) wire.geometry.dispose(); if (centroid) centroid.geometry.dispose(); if (xAxis) xAxis.geometry.dispose(); solidMaterial.dispose(); wireMaterial.dispose(); centroidMaterial.dispose(); xAxisMaterial.dispose(); base.geometry.dispose(); base.material.dispose(); renderer.dispose(); if (resetRef && resetRef.current === reset3D) resetRef.current = null; if (rotateRef && rotateRef.current === rotate3D) rotateRef.current = null; root.innerHTML = ''; };
   }, []);
-  return <article className="view-card three-card"><div className="card-head"><span>3D</span><small>Backend raw cuboid · centroid · Y center · full X-axis · orbit · pan · zoom</small></div><div className="three-stage" ref={mount}/><div className="three-tools"><span>LEFT DRAG · ORBIT</span><span>RIGHT DRAG · PAN</span><span>MIDDLE / WHEEL · ZOOM</span><button type="button" onClick={() => resetRef.current?.()}>RESET · 180°</button></div></article>;
+  return <article className="view-card three-card"><div className="card-head"><span>3D</span><small>Backend raw cuboid · centroid · X-axis · orbit · pan · zoom</small></div><div className="three-stage" ref={mount}/><div className="three-tools"><span>LEFT DRAG · ORBIT</span><span>RIGHT DRAG · PAN</span><span>MIDDLE / WHEEL · ZOOM</span><button type="button" onClick={() => resetRef.current?.()}>RESET · 180°</button></div></article>;
 }
 
 export default function ViewerV2() {
