@@ -73,16 +73,24 @@ function ThreeView({ onHeading, resetRef, rotateRef }) {
     const solidMaterial = new THREE.MeshBasicMaterial({ color: 0x788f98, side: THREE.DoubleSide, transparent: false, opacity: 1 });
     const wireMaterial = new THREE.LineBasicMaterial({ color: 0x9bf5ff, transparent: true, opacity: 1 });
     const centroidMaterial = new THREE.MeshBasicMaterial({ color: 0x76ff91, depthTest: false, depthWrite: false });
-    let solid = null; let wire = null; let centroid = null;
+    const centroidAxisMaterial = new THREE.LineBasicMaterial({ color: 0x76ff91, transparent: true, opacity: .8, depthTest: false, depthWrite: false });
+    let solid = null; let wire = null; let centroid = null; let centroidAxis = null;
     const renderRaw = (raw, centroidPoint) => {
       const geometry = buildRawCube(raw); if (!geometry) return;
       if (solid) { scene.remove(solid); solid.geometry.dispose(); }
       if (wire) { scene.remove(wire); wire.geometry.dispose(); }
       if (centroid) { scene.remove(centroid); centroid.geometry.dispose(); }
+      if (centroidAxis) { scene.remove(centroidAxis); centroidAxis.geometry.dispose(); }
       solid = new THREE.Mesh(geometry, solidMaterial); solid.position.set(0, 0, 0); scene.add(solid);
       wire = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), wireMaterial); wire.position.set(0, 0, 0); wire.scale.setScalar(1.001); scene.add(wire);
       const point = Array.isArray(centroidPoint) ? centroidPoint.map(Number) : [0,0,0];
-      centroid = new THREE.Mesh(new THREE.SphereGeometry(.14, 24, 24), centroidMaterial); centroid.position.set(point[0] || 0, point[1] || 0, point[2] || 0); centroid.renderOrder = 1000; scene.add(centroid);
+      centroidAxis = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(point[0] || 0, -1.2, point[2] || 0),
+        new THREE.Vector3(point[0] || 0, 1.2, point[2] || 0),
+      ]), centroidAxisMaterial);
+      centroidAxis.renderOrder = 999;
+      scene.add(centroidAxis);
+      centroid = new THREE.Mesh(new THREE.SphereGeometry(.17, 24, 24), centroidMaterial); centroid.position.set(point[0] || 0, point[1] || 0, point[2] || 0); centroid.renderOrder = 1000; scene.add(centroid);
     };
 
     const controls = new OrbitControls(camera, renderer.domElement); controls.target.copy(defaultTarget); controls.enableDamping = true; controls.dampingFactor = .075; controls.enableRotate = true; controls.enablePan = true; controls.enableZoom = true; controls.rotateSpeed = .9; controls.panSpeed = 1; controls.zoomSpeed = 1; controls.minDistance = 3; controls.maxDistance = 35; controls.minPolarAngle = .12; controls.maxPolarAngle = Math.PI - .12; controls.screenSpacePanning = true; controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }; controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
@@ -95,9 +103,9 @@ function ThreeView({ onHeading, resetRef, rotateRef }) {
     if (resetRef) resetRef.current = reset3D; if (rotateRef) rotateRef.current = rotate3D;
     let af = 0; const loop = () => { if (dead) return; controls.update(); renderer.render(scene, camera); af = requestAnimationFrame(loop); }; loop();
     fetch(`${API}/api/frame`).then(r => r.ok ? r.json() : null).then(d => { if (dead || !d?.input?.vertices) return; renderRaw(d.input, d.centroid); }).catch(() => {});
-    return () => { dead = true; cancelAnimationFrame(af); ro.disconnect(); controls.removeEventListener('change', changed); renderer.domElement.removeEventListener('contextmenu', onContextMenu); controls.dispose(); if (solid) solid.geometry.dispose(); if (wire) wire.geometry.dispose(); if (centroid) centroid.geometry.dispose(); solidMaterial.dispose(); wireMaterial.dispose(); centroidMaterial.dispose(); base.geometry.dispose(); base.material.dispose(); renderer.dispose(); if (resetRef && resetRef.current === reset3D) resetRef.current = null; if (rotateRef && rotateRef.current === rotate3D) rotateRef.current = null; root.innerHTML = ''; };
+    return () => { dead = true; cancelAnimationFrame(af); ro.disconnect(); controls.removeEventListener('change', changed); renderer.domElement.removeEventListener('contextmenu', onContextMenu); controls.dispose(); if (solid) solid.geometry.dispose(); if (wire) wire.geometry.dispose(); if (centroid) centroid.geometry.dispose(); if (centroidAxis) centroidAxis.geometry.dispose(); solidMaterial.dispose(); wireMaterial.dispose(); centroidMaterial.dispose(); centroidAxisMaterial.dispose(); base.geometry.dispose(); base.material.dispose(); renderer.dispose(); if (resetRef && resetRef.current === reset3D) resetRef.current = null; if (rotateRef && rotateRef.current === rotate3D) rotateRef.current = null; root.innerHTML = ''; };
   }, []);
-  return <article className="view-card three-card"><div className="card-head"><span>3D</span><small>Backend raw cuboid · centroid · orbit · pan · zoom</small></div><div className="three-stage" ref={mount}/><div className="three-tools"><span>LEFT DRAG · ORBIT</span><span>RIGHT DRAG · PAN</span><span>MIDDLE / WHEEL · ZOOM</span><button type="button" onClick={() => resetRef.current?.()}>RESET · 180°</button></div></article>;
+  return <article className="view-card three-card"><div className="card-head"><span>3D</span><small>Backend raw cuboid · centroid · Y center · orbit · pan · zoom</small></div><div className="three-stage" ref={mount}/><div className="three-tools"><span>LEFT DRAG · ORBIT</span><span>RIGHT DRAG · PAN</span><span>MIDDLE / WHEEL · ZOOM</span><button type="button" onClick={() => resetRef.current?.()}>RESET · 180°</button></div></article>;
 }
 
 export default function ViewerV2() {
@@ -107,5 +115,5 @@ export default function ViewerV2() {
   const handleHeading = (value) => { const h = norm(value); setHeading(h); if (sync) publish(h); };
   const rotateBy = (amount) => { if (threeRotateRef.current) threeRotateRef.current(amount); else handleHeading(heading + amount); };
   const resetAll = () => { if (threeResetRef.current) threeResetRef.current(); else handleHeading(180); };
-  return <main className="app-shell"><header className="hero"><div><h1>Foveated LiDAR Mapping</h1><p>3D model · 1D profile · 2D projection · 2.5D range map</p></div><div className="hero-meta"><b>● 3D RESET · 180° DEFAULT</b><small>0° TOP · 90° RIGHT · 180° BOTTOM · 270° LEFT</small></div></header><section className="toolbar"><span className="badge">4 SPACES</span><span className="badge">3D → 1D → 2D → 2.5D</span><span className="grow"/><button className="sync-button" type="button" onClick={() => setSync(v => !v)}>• SYNC {sync ? 'ON' : 'OFF'}</button><button type="button" onClick={() => rotateBy(-5)}>↶ 5°</button><button type="button" onClick={() => rotateBy(5)}>5° ↷</button><button type="button" onClick={resetAll}>RESET · 180°</button></section><section className="view-grid"><ThreeView onHeading={handleHeading} resetRef={threeResetRef} rotateRef={threeRotateRef}/><OneDView heading={heading}/><TwoDView heading={heading}/><TwoFiveDView heading={heading}/></section><section className="analysis panel"><div><span className="section-kicker">FOV / ORIENTATION</span><strong>{Math.round(heading)}°</strong><small>linked heading</small></div><div><span className="section-kicker">INPUT</span><strong>RAW CUBOID</strong><small>backend/data/raw/cube.json</small></div><div><span className="section-kicker">CENTROID</span><strong>BACKEND COMPUTED</strong><small>geometric center of raw vertices</small></div></section></main>;
+  return <main className="app-shell"><header className="hero"><div><h1>Foveated LiDAR Mapping</h1><p>3D model · 1D profile · 2D projection · 2.5D range map</p></div><div className="hero-meta"><b>● 3D RESET · 180° DEFAULT</b><small>0° TOP · 90° RIGHT · 180° BOTTOM · 270° LEFT</small></div></header><section className="toolbar"><span className="badge">4 SPACES</span><span className="badge">3D → 1D → 2D → 2.5D</span><span className="grow"/><button className="sync-button" type="button" onClick={() => setSync(v => !v)}>• SYNC {sync ? 'ON' : 'OFF'}</button><button type="button" onClick={() => rotateBy(-5)}>↶ 5°</button><button type="button" onClick={() => rotateBy(5)}>5° ↷</button><button type="button" onClick={resetAll}>RESET · 180°</button></section><section className="view-grid"><ThreeView onHeading={handleHeading} resetRef={threeResetRef} rotateRef={threeRotateRef}/><OneDView heading={heading}/><TwoDView heading={heading}/><TwoFiveDView heading={heading}/></section><section className="analysis panel"><div><span className="section-kicker">FOV / ORIENTATION</span><strong>{Math.round(heading)}°</strong><small>linked heading</small></div><div><span className="section-kicker">INPUT</span><strong>RAW CUBOID</strong><small>backend/data/raw/cube.json</small></div><div><span className="section-kicker">CENTROID</span><strong>BACKEND COMPUTED</strong><small>geometric center of raw vertices · Y = 0</small></div></section></main>;
 }
