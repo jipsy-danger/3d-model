@@ -18,6 +18,7 @@ state = {
     "zoom": 1.0,
     "pan_x": 0.0,
     "pan_y": 0.0,
+    "centroid_screen": {"x": 0.0, "y": 0.0, "z": 0.0},
 }
 clients: set[WebSocket] = set()
 
@@ -34,6 +35,7 @@ def camera_packet():
         "target": state["target"],
         "fov": state["fov"],
         "aspect": state["aspect"],
+        "centroid_screen": state["centroid_screen"],
     }
 
 
@@ -72,6 +74,13 @@ async def handle_view_socket(ws: WebSocket):
             for key in ("fov", "aspect", "zoom", "pan_x", "pan_y"):
                 if key in msg:
                     state[key] = float(msg[key])
+            centroid_screen = msg.get("centroid_screen")
+            if isinstance(centroid_screen, dict):
+                state["centroid_screen"] = {
+                    "x": float(centroid_screen.get("x", 0.0)),
+                    "y": float(centroid_screen.get("y", 0.0)),
+                    "z": float(centroid_screen.get("z", 0.0)),
+                }
             packet = camera_packet()
             for client in list(clients):
                 try:
