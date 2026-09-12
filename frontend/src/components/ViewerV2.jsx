@@ -75,6 +75,12 @@ function OneDView({ heading }) {
     const a = degToRad(norm(heading));
     return x * Math.cos(a) + z * Math.sin(a);
   });
+  const centroid = dataRef.current?.centroid;
+  const centroidProjected = Array.isArray(centroid)
+    ? axis === 'y'
+      ? Number(centroid[1] || 0)
+      : Number(centroid[0] || 0) * Math.cos(degToRad(norm(heading))) + Number(centroid[2] || 0) * Math.sin(degToRad(norm(heading)))
+    : null;
   const min = projected.length ? Math.min(...projected) : -3;
   const max = projected.length ? Math.max(...projected) : 3;
   const span = Math.max(0.001, max - min);
@@ -102,6 +108,10 @@ function OneDView({ heading }) {
         ? <i key={i} className="one-d-cloud-dot" style={{ left: `${toPercent(v)}%`, top: '50%' }}/>
         : <i key={i} className="one-d-cloud-dot" style={{ left: '50%', top: `${100 - toPercent(v)}%` }}/>
       )}
+      {centroidProjected !== null && <i className="one-d-centroid" style={axis === 'x'
+        ? { left: `${toPercent(centroidProjected)}%`, top: '50%' }
+        : { left: '50%', top: `${100 - toPercent(centroidProjected)}%` }
+      }/>}
       <span className="one-d-sync-indicator">● 3D SYNC · {Math.round(heading)}°</span>
       <span className="one-d-space-axis-label">1D SPACE · {axisLabel} · PAN + ZOOM · {projectionLabel}</span>
       {!points.length && <span className="one-d-viewport-hint">LOADING BACKEND POINTS…</span>}
