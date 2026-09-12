@@ -31,6 +31,15 @@ def build_demo_frame(samples: int = 32):
                 else: p = [x, y, -half_z]
                 points.append(p)
 
+    vertices = raw.get("vertices", [])
+    if vertices:
+        centroid = [
+            sum(float(v[i]) for v in vertices) / len(vertices)
+            for i in range(3)
+        ]
+    else:
+        centroid = [float(v) for v in raw.get("origin", [0.0, 0.0, 0.0])]
+
     polar = []
     grid = [[None for _ in range(72)] for _ in range(16)]
     for x, y, z in points:
@@ -50,7 +59,7 @@ def build_demo_frame(samples: int = 32):
         "raw_input": {"path": "backend/data/raw/cube.json", "vertices": raw["vertices"]},
         "points": points,
         "point_count": len(points),
-        "centroid": raw["origin"],
+        "centroid": centroid,
         "rings": 16,
         "horizontal_fov_deg": 360,
         "projection_2d": polar,
