@@ -69,19 +69,21 @@ function OneDView({ heading, pitch }) {
   useEffect(() => { viewRef.current.center = 0; redraw((v) => v + 1); }, [axis]);
 
   const points = dataRef.current?.points || [];
-  const projected = points.map((p) => {
-    const x = Number(p[0] || 0), y = Number(p[1] || 0), z = Number(p[2] || 0);
-    if (axis === 'y') return y;
-    const a = degToRad(norm(heading));
-    // Screen-horizontal coordinate of the actual 3D camera at this azimuth.
-    return x * Math.cos(a) - z * Math.sin(a);
-  });
+  const h = degToRad(norm(heading));
+  const p = degToRad(pitch || 0);
+  // Exact horizontal screen-right vector of the 3D camera.
+  const right = [Math.cos(h), 0, -Math.sin(h)];
+  // Exact screen-up vector of the 3D camera, including its vertical pitch.
+  const up = [Math.sin(h) * Math.sin(p), Math.cos(p), Math.cos(h) * Math.sin(p)];
+  const project = (point) => {
+    const x = Number(point[0] || 0), y = Number(point[1] || 0), z = Number(point[2] || 0);
+    return axis === 'x'
+      ? x * right[0] + y * right[1] + z * right[2]
+      : x * up[0] + y * up[1] + z * up[2];
+  };
+  const projected = points.map(project);
   const centroid = dataRef.current?.centroid;
-  const centroidProjected = Array.isArray(centroid)
-    ? axis === 'y'
-      ? Number(centroid[1] || 0)
-      : Number(centroid[0] || 0) * Math.cos(degToRad(norm(heading))) - Number(centroid[2] || 0) * Math.sin(degToRad(norm(heading)))
-    : null;
+  const centroidProjected = Array.isArray(centroid) ? project(centroid) : null;
   const min = projected.length ? Math.min(...projected) : -3;
   const max = projected.length ? Math.max(...projected) : 3;
   const span = Math.max(0.001, max - min);
@@ -95,7 +97,9 @@ function OneDView({ heading, pitch }) {
   for (let v = start; v <= end + tickStep; v += tickStep) ticks.push(Number(v.toFixed(3)));
 
   const axisLabel = axis.toUpperCase();
-  const projectionLabel = axis === 'x' ? `X′ = X cos(${Math.round(heading)}°) − Z sin(${Math.round(heading)}°)` : 'Y′ = Y';
+  const projectionLabel = axis === 'x'
+    ? `CAMERA RIGHT · AZ ${Math.round(heading)}°`
+    : `CAMERA UP · AZ ${Math.round(heading)}° · PITCH ${Math.round(pitch || 0)}°`;
 
   return <article className="view-card one-d-card">
     <div className="card-head"><span>1D</span><small>ONE-DIMENSIONAL SPATIAL PROJECTION · {axisLabel}-AXIS</small><span className="angle-readout">{String(Math.round(heading)).padStart(3, '0')}°</span></div>
@@ -113,7 +117,7 @@ function OneDView({ heading, pitch }) {
         ? { left: `${toPercent(centroidProjected)}%`, top: '50%' }
         : { left: '50%', top: `${100 - toPercent(centroidProjected)}%` }
       />}
-      <span className="one-d-sync-indicator">● 3D SYNC · {Math.round(heading)}°</span>
+      <span className="one-d-sync-indicator">● 3D SYNC · {Math.round(heading)}° · PITCH {Math.round(pitch || 0)}°</span>
       <span className="one-d-space-axis-label">1D SPACE · {axisLabel} · PAN + ZOOM · {projectionLabel}</span>
       {!points.length && <span className="one-d-viewport-hint">LOADING BACKEND POINTS…</span>}
       <span className="one-d-viewport-hint" style={{ bottom: 27 }}>{span.toFixed(2)} m SOURCE SPAN</span>
@@ -157,8 +161,8 @@ function buildRawCube(raw) {
   return geometry;
 }
 
-function ThreeView({ onHeading, resetRef, rotateRef }) {
-  const mount = useRef(null); const headingCallback = useRef(onHeading); headingCallback.current = onHeading;
+function ThreeView({ onViewChange, resetRef, rotateRef }) {
+  const mount = useRef(null); const viewCallback = useRef(onViewChange); viewCallback.current = onViewChange;
   useEffect(() => {
     const root = mount.current; if (!root) return undefined; let dead = false;
     const scene = new THREE.Scene(); scene.background = new THREE.Color(0x05080a);
@@ -170,7 +174,7 @@ function ThreeView({ onHeading, resetRef, rotateRef }) {
     let solid = null, wire = null, centroid = null, xAxis = null;
     const renderRaw = (raw, centroidPoint) => { const geometry = buildRawCube(raw); if (!geometry) return; solid = new THREE.Mesh(geometry, solidMaterial); scene.add(solid); wire = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), wireMaterial); wire.scale.setScalar(1.001); scene.add(wire); const p = Array.isArray(centroidPoint) ? centroidPoint.map(Number) : [0,0,0]; xAxis = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-100,p[1]||0,p[2]||0),new THREE.Vector3(100,p[1]||0,p[2]||0)]), axisMaterial); xAxis.renderOrder = 999; scene.add(xAxis); centroid = new THREE.Mesh(new THREE.SphereGeometry(.17,24,24), centroidMaterial); centroid.position.set(p[0]||0,p[1]||0,p[2]||0); centroid.renderOrder = 1000; scene.add(centroid); };
     const controls = new OrbitControls(camera, renderer.domElement); controls.target.copy(defaultTarget); controls.enableDamping = true; controls.dampingFactor = .075; controls.enableRotate = true; controls.enablePan = true; controls.enableZoom = true; controls.rotateSpeed = .9; controls.panSpeed = 1; controls.zoomSpeed = 1; controls.minDistance = 3; controls.maxDistance = 35; controls.minPolarAngle = .12; controls.maxPolarAngle = Math.PI-.12; controls.screenSpacePanning = true; controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }; controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
-    const changed = () => { const o = camera.position.clone().sub(controls.target); const h = Math.hypot(o.x,o.z); if (h > .0001) headingCallback.current(norm(Math.atan2(o.x,o.z)*180/Math.PI)); }; controls.addEventListener('change', changed); controls.update(); controls.saveState(); changed();
+    const changed = () => { const o = camera.position.clone().sub(controls.target); const h = Math.hypot(o.x,o.z); const heading = h > .0001 ? norm(Math.atan2(o.x,o.z)*180/Math.PI) : 180; const pitch = Math.atan2(o.y,h)*180/Math.PI; viewCallback.current(heading,pitch); }; controls.addEventListener('change', changed); controls.update(); controls.saveState(); changed();
     const reset3D = () => { controls.reset(); controls.update(); changed(); }; const rotate3D = (amount) => { const o = camera.position.clone().sub(controls.target), a = degToRad(amount); const x = o.x*Math.cos(a)+o.z*Math.sin(a), z = -o.x*Math.sin(a)+o.z*Math.cos(a); camera.position.set(controls.target.x+x,camera.position.y,controls.target.z+z); controls.update(); changed(); }; if (resetRef) resetRef.current=reset3D; if (rotateRef) rotateRef.current=rotate3D;
     const resize=()=>{const w=Math.max(1,root.clientWidth),h=Math.max(1,root.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}; const ro=new ResizeObserver(resize); ro.observe(root); resize();
     fetch(`${API}/api/frame`).then(r=>r.ok?r.json():null).then(d=>{if(!dead&&d?.input?.vertices)renderRaw(d.input,d.centroid);}).catch(()=>{});
@@ -192,15 +196,17 @@ function TwoFiveDView({ heading }) {
 
 export default function ViewerV2(){
   const [threeHeading,setThreeHeading]=useState(180);
+  const [threePitch,setThreePitch]=useState(28);
   const [heading,setHeading]=useState(180);
+  const [pitch,setPitch]=useState(28);
   const [sync,setSync]=useState(true);
   const socket=useRef(null);
   const threeResetRef=useRef(null);
   const threeRotateRef=useRef(null);
 
-  const publish=(h)=>{
+  const publish=(h,p)=>{
     if(!sync||socket.current?.readyState!==WebSocket.OPEN)return;
-    socket.current.send(JSON.stringify({type:'view_state',heading:norm(h)}));
+    socket.current.send(JSON.stringify({type:'view_state',heading:norm(h),pitch:Number(p)}));
   };
 
   useEffect(()=>{
@@ -211,17 +217,21 @@ export default function ViewerV2(){
       try{
         const m=JSON.parse(e.data);
         if(sync && typeof m.heading==='number') setHeading(norm(m.heading));
+        if(sync && typeof m.pitch==='number') setPitch(m.pitch);
       }catch{}
     };
     return()=>{ws.close();socket.current=null;};
   },[sync]);
 
-  const handleThreeHeading=(v)=>{
-    const h=norm(v);
-    setThreeHeading(h);
+  const handleThreeView=(h,p)=>{
+    const headingValue=norm(h);
+    const pitchValue=Number(p);
+    setThreeHeading(headingValue);
+    setThreePitch(pitchValue);
     if(sync){
-      setHeading(h);
-      publish(h);
+      setHeading(headingValue);
+      setPitch(pitchValue);
+      publish(headingValue,pitchValue);
     }
   };
 
@@ -230,16 +240,17 @@ export default function ViewerV2(){
       const next=!enabled;
       if(next){
         setHeading(threeHeading);
+        setPitch(threePitch);
         window.setTimeout(()=>{
-          if(socket.current?.readyState===WebSocket.OPEN) socket.current.send(JSON.stringify({type:'view_state',heading:norm(threeHeading)}));
+          if(socket.current?.readyState===WebSocket.OPEN) socket.current.send(JSON.stringify({type:'view_state',heading:norm(threeHeading),pitch:Number(threePitch)}));
         },0);
       }
       return next;
     });
   };
 
-  const rotateBy=(v)=>{if(threeRotateRef.current)threeRotateRef.current(v);else handleThreeHeading(threeHeading+v);};
-  const resetAll=()=>{if(threeResetRef.current)threeResetRef.current();else handleThreeHeading(180);};
+  const rotateBy=(v)=>{if(threeRotateRef.current)threeRotateRef.current(v);else handleThreeView(threeHeading+v,threePitch);};
+  const resetAll=()=>{if(threeResetRef.current)threeResetRef.current();else handleThreeView(180,28);};
 
-  return <main className="app-shell"><header className="hero"><div><h1>Foveated LiDAR Mapping</h1><p>3D model · 1D profile · 2D projection · 2.5D range map</p></div><div className="hero-meta"><b>● 3D RESET · 180° DEFAULT</b><small>0° TOP · 90° RIGHT · 180° BOTTOM · 270° LEFT</small></div></header><section className="toolbar"><span className="badge">4 SPACES</span><span className="badge">3D → 1D → 2D → 2.5D</span><span className="grow"/><button className={`sync-button ${sync?'sync-active':'sync-off'}`} type="button" onClick={toggleSync}>• SYNC {sync?'ON':'OFF'}</button><button type="button" onClick={()=>rotateBy(-5)}>↶ 5°</button><button type="button" onClick={()=>rotateBy(5)}>5° ↷</button><button type="button" onClick={resetAll}>RESET · 180°</button></section><section className="view-grid"><ThreeView onHeading={handleThreeHeading} resetRef={threeResetRef} rotateRef={threeRotateRef}/><OneDView heading={heading} pitch={0}/><TwoDView heading={heading}/><TwoFiveDView heading={heading}/></section><section className="analysis panel"><div><span className="section-kicker">FOV / ORIENTATION</span><strong>{Math.round(threeHeading)}°</strong><small>{sync?'linked heading':'3D heading · sync paused'}</small></div><div><span className="section-kicker">INPUT</span><strong>RAW CUBOID</strong><small>backend/data/raw/cube.json</small></div><div><span className="section-kicker">CENTROID</span><strong>BACKEND COMPUTED</strong><small>geometric center of raw vertices · Y = 0</small></div></section></main>;
+  return <main className="app-shell"><header className="hero"><div><h1>Foveated LiDAR Mapping</h1><p>3D model · 1D profile · 2D projection · 2.5D range map</p></div><div className="hero-meta"><b>● 3D RESET · 180° DEFAULT</b><small>0° TOP · 90° RIGHT · 180° BOTTOM · 270° LEFT</small></div></header><section className="toolbar"><span className="badge">4 SPACES</span><span className="badge">3D → 1D → 2D → 2.5D</span><span className="grow"/><button className={`sync-button ${sync?'sync-active':'sync-off'}`} type="button" onClick={toggleSync}>• SYNC {sync?'ON':'OFF'}</button><button type="button" onClick={()=>rotateBy(-5)}>↶ 5°</button><button type="button" onClick={()=>rotateBy(5)}>5° ↷</button><button type="button" onClick={resetAll}>RESET · 180°</button></section><section className="view-grid"><ThreeView onViewChange={handleThreeView} resetRef={threeResetRef} rotateRef={threeRotateRef}/><OneDView heading={heading} pitch={pitch}/><TwoDView heading={heading}/><TwoFiveDView heading={heading}/></section><section className="analysis panel"><div><span className="section-kicker">FOV / ORIENTATION</span><strong>{Math.round(threeHeading)}° / {Math.round(threePitch)}°</strong><small>{sync?'linked 3D camera':'3D camera · sync paused'}</small></div><div><span className="section-kicker">INPUT</span><strong>RAW CUBOID</strong><small>backend/data/raw/cube.json</small></div><div><span className="section-kicker">CENTROID</span><strong>BACKEND COMPUTED</strong><small>geometric center of raw vertices · Y = 0</small></div></section></main>;
 }
