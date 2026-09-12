@@ -145,7 +145,8 @@ export default function Viewer() {
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0x05080a);
       const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 200);
-      // Reset/default side: the same perspective used by the requested reference view.
+      // Keep the existing reference geometry/ruler unchanged. The reset action
+      // below chooses the 180° back-side reference view.
       camera.position.set(0, 5.5, 7.5);
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -329,16 +330,17 @@ export default function Viewer() {
     const viewer = three.current;
     if (!viewer) return;
     state.current.applyingRemote = false;
-    viewer.camera.position.set(0, 5.5, 7.5);
+    // Reset reference view is 180°: back/bottom side of the fixed ruler.
+    viewer.camera.position.set(0, 5.5, -7.5);
     viewer.controls.target.set(0, -0.35, 0);
     viewer.controls.update();
-    state.current.heading = 0;
+    state.current.heading = 180;
     state.current.pitch = 35;
     state.current.zoom = 1;
     state.current.panX = 0;
     state.current.panY = 0;
-    setHeading(0);
-    setStatus('3D RESET · 0° TOP · CLOCKWISE');
+    setHeading(180);
+    setStatus('3D RESET · 180° BOTTOM · CLOCKWISE');
     if (state.current.sync) publish();
   };
 
