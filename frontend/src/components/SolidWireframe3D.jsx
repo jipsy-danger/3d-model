@@ -1,229 +1,153 @@
 import React, { useEffect } from 'react';
-import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 const API = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
-function degreeLabel(text) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 180;
-  canvas.height = 64;
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.font = 'bold 26px monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#b9e9f2';
-  ctx.fillText(text, 90, 32);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.minFilter = THREE.LinearFilter;
-  return new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
+const DEFAULT_RAW = {
+  origin: [0, 0, 0],
+  vertices: [
+    [-1.15, -1.15, -1.15], [1.15, -1.15, -1.15],
+    [1.15, 1.15, -1.15], [-1.15, 1.15, -1.15],
+    [-1.15, -1.15, 1.15], [1.15, -1.15, 1.15],
+    [1.15, 1.15, 1.15], [-1.15, 1.15, 1.15]
+  ]
+};
+
+const EDGES = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+const FACES = [[0,1,2,3],[4,7,6,5],[0,4,5,1],[3,2,6,7],[1,5,6,2],[0,3,7,4]];
+
+function project(point, yaw, pitch, zoom, panX, panY, width, height) {
+  let [x, y, z] = point;
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  const x1 = x * cy - z * sy;
+  const z1 = x * sy + z * cy;
+  const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const y1 = y * cp - z1 * sp;
+  const z2 = y * sp + z1 * cp;
+  const perspective = 1 / (1 + z2 * 0.045);
+  return [width / 2 + panX + x1 * zoom * perspective, height / 2 + panY - y1 * zoom * perspective, z2];
 }
 
-function addRuler(scene) {
-  const radius = 3.28;
-  const group = new THREE.Group();
-  const ringPoints = [];
-  for (let i = 0; i <= 128; i += 1) {
-    const a = (i / 128) * Math.PI * 2;
-    ringPoints.push(new THREE.Vector3(-Math.sin(a) * radius, -1.485, Math.cos(a) * radius));
-  }
-  group.add(new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints(ringPoints),
-    new THREE.LineBasicMaterial({ color: 0x477b88, transparent: true, opacity: 0.72 })
-  ));
-
-  for (let d = 0; d <= 360; d += 10) {
-    const a = (d * Math.PI) / 180;
-    const major = d % 30 === 0;
-    const inner = radius - (major ? 0.26 : 0.15);
-    const outer = radius + 0.13;
-    group.add(new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(-Math.sin(a) * inner, -1.48, Math.cos(a) * inner),
-        new THREE.Vector3(-Math.sin(a) * outer, -1.48, Math.cos(a) * outer)
-      ]),
-      new THREE.LineBasicMaterial({ color: major ? 0x8fe9f5 : 0x456b75, transparent: true, opacity: major ? 0.9 : 0.6 })
-    ));
-    if (major) {
-      const label = degreeLabel(`${d}°`);
-      const r = radius + 0.58;
-      label.position.set(-Math.sin(a) * r, -1.43, Math.cos(a) * r);
-      if (d === 360) {
-        label.position.x -= 0.3;
-        label.position.z += 0.3;
-      }
-      label.scale.set(0.9, 0.34, 1);
-      group.add(label);
-    }
-  }
-  scene.add(group);
-}
-
-function buildRawCube(raw) {
-  const vertices = raw?.vertices;
-  if (!Array.isArray(vertices) || vertices.length !== 8) return null;
-
-  const positions = new Float32Array(vertices.flat().map(Number));
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geometry.setIndex([
-    0, 1, 2, 0, 2, 3,
-    4, 6, 5, 4, 7, 6,
-    0, 4, 5, 0, 5, 1,
-    3, 2, 6, 3, 6, 7,
-    1, 5, 6, 1, 6, 2,
-    0, 3, 7, 0, 7, 4
-  ]);
-  geometry.computeVertexNormals();
-  return geometry;
+function pointsAttr(points) {
+  return points.map(p => `${p[0].toFixed(2)},${p[1].toFixed(2)}`).join(' ');
 }
 
 export default function SolidWireframe3D() {
   useEffect(() => {
     let dead = false;
+    let raw = DEFAULT_RAW;
+    let yaw = -0.55;
+    let pitch = 0.48;
+    let zoom = 105;
+    let panX = 0;
+    let panY = 0;
+    let dragging = false;
+    let panMode = false;
+    let lastX = 0;
+    let lastY = 0;
+
     const timer = setInterval(() => {
       const root = document.querySelector('.three-stage');
-      if (!root || root.dataset.solidWireframe === '1') return;
-      root.dataset.solidWireframe = '1';
+      if (!root || root.dataset.rawSvgViewer === '1') return;
       clearInterval(timer);
+      root.dataset.rawSvgViewer = '1';
 
       const oldCanvas = root.querySelector('canvas');
       if (oldCanvas) oldCanvas.style.display = 'none';
       root.style.position = 'relative';
 
-      const scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x05080a);
-      const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 200);
-      camera.position.set(0, 5.5, -7.5);
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 600 330');
+      svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+      svg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;z-index:2;cursor:grab;touch-action:none;background:#05080a;';
+      root.appendChild(svg);
 
-      const renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-      renderer.setClearColor(0x05080a, 1);
-      renderer.domElement.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;';
-      root.appendChild(renderer.domElement);
+      const grid = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      const faces = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      const edges = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      const center = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('x', '18');
+      label.setAttribute('y', '25');
+      label.setAttribute('fill', '#6e8993');
+      label.setAttribute('font-size', '10');
+      label.setAttribute('font-family', 'ui-monospace,monospace');
+      label.textContent = 'RAW INPUT · 3D WIREFRAME';
+      svg.append(grid, faces, edges, center, label);
 
-      scene.add(new THREE.HemisphereLight(0xdff7ff, 0x162027, 2.2));
-      const key = new THREE.DirectionalLight(0xffffff, 4);
-      key.position.set(6, 10, 8);
-      scene.add(key);
-      const fill = new THREE.DirectionalLight(0x73dfff, 2.5);
-      fill.position.set(-7, 5, -5);
-      scene.add(fill);
+      const line = (a, b, stroke, width, opacity = 1) => {
+        const el = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        el.setAttribute('x1', a[0]); el.setAttribute('y1', a[1]);
+        el.setAttribute('x2', b[0]); el.setAttribute('y2', b[1]);
+        el.setAttribute('stroke', stroke); el.setAttribute('stroke-width', width); el.setAttribute('opacity', opacity);
+        return el;
+      };
 
-      const floor = new THREE.GridHelper(18, 36, 0x31515c, 0x172a31);
-      floor.position.y = -1.55;
-      scene.add(floor);
+      const render = () => {
+        const vertices = Array.isArray(raw.vertices) && raw.vertices.length === 8 ? raw.vertices : DEFAULT_RAW.vertices;
+        const projected = vertices.map(v => project(v.map(Number), yaw, pitch, zoom, panX, panY, 600, 330));
+        faces.replaceChildren(); edges.replaceChildren(); grid.replaceChildren();
 
-      const baseGeometry = new THREE.CircleGeometry(2.8, 64);
-      const baseMaterial = new THREE.MeshBasicMaterial({ color: 0x0c171b, transparent: true, opacity: 0.75, side: THREE.DoubleSide });
-      const base = new THREE.Mesh(baseGeometry, baseMaterial);
-      base.rotation.x = -Math.PI / 2;
-      base.position.y = -1.54;
-      scene.add(base);
-      addRuler(scene);
-
-      const cubeGroup = new THREE.Group();
-      cubeGroup.position.y = -0.4;
-      scene.add(cubeGroup);
-
-      const solidMaterial = new THREE.MeshStandardMaterial({
-        color: 0x7896a0,
-        metalness: 0.12,
-        roughness: 0.38,
-        transparent: true,
-        opacity: 0.72,
-        side: THREE.DoubleSide
-      });
-      const wireMaterial = new THREE.LineBasicMaterial({ color: 0x9bf5ff, transparent: true, opacity: 1 });
-      const centroidMaterial = new THREE.MeshBasicMaterial({ color: 0x76ff91 });
-
-      const renderRaw = (raw) => {
-        const geometry = buildRawCube(raw);
-        if (!geometry) return;
-        while (cubeGroup.children.length) {
-          const child = cubeGroup.children.pop();
-          if (child.geometry) child.geometry.dispose();
-          cubeGroup.remove(child);
+        for (let i = -5; i <= 5; i++) {
+          const p1 = project([i * 0.6, -1.3, -3], yaw, pitch, zoom, panX, panY, 600, 330);
+          const p2 = project([i * 0.6, -1.3, 3], yaw, pitch, zoom, panX, panY, 600, 330);
+          grid.appendChild(line(p1, p2, '#172a31', 1, 0.9));
+          const q1 = project([-3, -1.3, i * 0.6], yaw, pitch, zoom, panX, panY, 600, 330);
+          const q2 = project([3, -1.3, i * 0.6], yaw, pitch, zoom, panX, panY, 600, 330);
+          grid.appendChild(line(q1, q2, '#172a31', 1, 0.9));
         }
 
-        const solid = new THREE.Mesh(geometry, solidMaterial);
-        cubeGroup.add(solid);
-        const wire = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), wireMaterial);
-        wire.scale.setScalar(1.002);
-        cubeGroup.add(wire);
+        const faceDepth = FACES.map((face, index) => ({
+          index,
+          depth: face.reduce((sum, i) => sum + projected[i][2], 0) / 4
+        })).sort((a, b) => b.depth - a.depth);
+        for (const item of faceDepth) {
+          const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+          poly.setAttribute('points', pointsAttr(item.index === undefined ? [] : FACES[item.index].map(i => projected[i])));
+          poly.setAttribute('fill', item.depth > 0 ? '#5f7982' : '#3b4f56');
+          poly.setAttribute('fill-opacity', '0.34');
+          faces.appendChild(poly);
+        }
 
-        const origin = Array.isArray(raw.origin) ? raw.origin.map(Number) : [0, 0, 0];
-        const center = new THREE.Mesh(new THREE.SphereGeometry(0.09, 16, 16), centroidMaterial);
-        center.position.set(origin[0] || 0, origin[1] || 0, origin[2] || 0);
-        cubeGroup.add(center);
+        for (const [a, b] of EDGES) edges.appendChild(line(projected[a], projected[b], '#9bf5ff', 2, 1));
+
+        const o = Array.isArray(raw.origin) ? raw.origin.map(Number) : [0,0,0];
+        const c = project(o, yaw, pitch, zoom, panX, panY, 600, 330);
+        center.setAttribute('cx', c[0]); center.setAttribute('cy', c[1]); center.setAttribute('r', '5');
+        center.setAttribute('fill', '#76ff91'); center.setAttribute('filter', 'drop-shadow(0 0 5px #76ff91)');
       };
 
-      const fallbackRaw = {
-        origin: [0, 0, 0],
-        vertices: [
-          [-1.15, -1.15, -1.15], [1.15, -1.15, -1.15],
-          [1.15, 1.15, -1.15], [-1.15, 1.15, -1.15],
-          [-1.15, -1.15, 1.15], [1.15, -1.15, 1.15],
-          [1.15, 1.15, 1.15], [-1.15, 1.15, 1.15]
-        ]
-      };
-      renderRaw(fallbackRaw);
-
-      const controls = new OrbitControls(camera, renderer.domElement);
-      controls.target.set(0, -0.35, 0);
-      controls.enableDamping = true;
-      controls.dampingFactor = 0.075;
-      controls.enableRotate = true;
-      controls.enablePan = true;
-      controls.enableZoom = true;
-      controls.rotateSpeed = 0.9;
-      controls.panSpeed = 1;
-      controls.zoomSpeed = 1;
-      controls.minDistance = 3;
-      controls.maxDistance = 35;
-      controls.minPolarAngle = 0.12;
-      controls.maxPolarAngle = Math.PI - 0.12;
-      controls.screenSpacePanning = true;
-      controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
-      controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
-
-      const resize = () => {
-        const w = Math.max(1, root.clientWidth);
-        const h = Math.max(1, root.clientHeight);
-        renderer.setSize(w, h, false);
-        camera.aspect = w / h;
-        camera.updateProjectionMatrix();
-      };
-      const ro = new ResizeObserver(resize);
-      ro.observe(root);
-      resize();
-      controls.update();
-      controls.saveState();
-
+      const reset = () => { yaw = -0.55; pitch = 0.48; zoom = 105; panX = 0; panY = 0; render(); };
       const resetButton = root.parentElement?.querySelector('.three-tools button');
-      const reset = () => { controls.reset(); controls.update(); };
       resetButton?.addEventListener('click', reset);
 
-      fetch(`${API}/api/frame`)
-        .then(r => r.ok ? r.json() : null)
-        .then(d => {
-          if (dead || !d?.input) return;
-          renderRaw(d.input);
-        })
-        .catch(() => {});
-
-      let af = 0;
-      const loop = () => {
-        if (dead) return;
-        controls.update();
-        renderer.render(scene, camera);
-        af = requestAnimationFrame(loop);
+      const pointerDown = e => { dragging = true; panMode = e.button === 2; lastX = e.clientX; lastY = e.clientY; svg.style.cursor = panMode ? 'move' : 'grabbing'; };
+      const pointerMove = e => {
+        if (!dragging) return;
+        const dx = e.clientX - lastX, dy = e.clientY - lastY;
+        lastX = e.clientX; lastY = e.clientY;
+        if (panMode) { panX += dx; panY += dy; }
+        else { yaw += dx * 0.008; pitch += dy * 0.008; pitch = Math.max(-1.35, Math.min(1.35, pitch)); }
+        render();
       };
-      loop();
+      const pointerUp = () => { dragging = false; svg.style.cursor = 'grab'; };
+      const wheel = e => { e.preventDefault(); zoom *= e.deltaY < 0 ? 1.08 : 0.93; zoom = Math.max(45, Math.min(220, zoom)); render(); };
+      const context = e => e.preventDefault();
+      svg.addEventListener('pointerdown', pointerDown);
+      window.addEventListener('pointermove', pointerMove);
+      window.addEventListener('pointerup', pointerUp);
+      svg.addEventListener('wheel', wheel, { passive: false });
+      svg.addEventListener('contextmenu', context);
+
+      fetch(`${API}/api/frame`).then(r => r.ok ? r.json() : null).then(data => {
+        if (dead || !data?.input?.vertices) return;
+        raw = data.input;
+        render();
+      }).catch(() => {});
+
+      render();
 
       return () => {};
-    }, 30);
+    }, 40);
 
     return () => {
       dead = true;
