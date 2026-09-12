@@ -19,11 +19,20 @@ function OneDView({ heading }) {
 }
 
 function TwoDView({ heading }) {
+  const rulerDegrees = Array.from({ length: 36 }, (_, i) => i * 10);
+  const majorDegrees = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330];
   return <article className="view-card two-d-card">
-    <div className="card-head"><span>2D</span><small>X/Y plane · 3D heading linked</small></div>
+    <div className="card-head"><span>2D</span><small>X/Y plane · 3D heading linked · 360° ruler</small></div>
     <div className="two-d-space">
       <div className="two-d-axis-x" /><div className="two-d-axis-y" />
       <div className="two-d-grid-lines" />
+      <div className="two-d-azimuth-ruler">
+        <div className="two-d-ruler-ring">
+          {rulerDegrees.map((degree) => <span className={`two-d-ruler-tick ${degree % 30 === 0 ? 'major' : ''}`} key={`tick-${degree}`} style={{ transform: `translate(-50%, -50%) rotate(${degree}deg) translateY(-${42}% )` }} />)}
+          {majorDegrees.map((degree) => <span className="two-d-ruler-label" key={`label-${degree}`} style={{ transform: `translate(-50%, -50%) rotate(${degree}deg) translateY(-${45}% ) rotate(${-degree}deg)` }}>{degree}°</span>)}
+          <span className="two-d-ruler-label two-d-ruler-360">360°</span>
+        </div>
+      </div>
       <div className="two-d-circle" />
       <div className="two-d-square" />
       <div className="two-d-rect" />
@@ -31,7 +40,7 @@ function TwoDView({ heading }) {
       <div className="two-d-heading" style={{ transform: `translate(-50%, -100%) rotate(${heading}deg)` }} />
       <span className="two-d-x-label">X</span><span className="two-d-y-label">Y</span>
     </div>
-    <div className="card-footer">X/Y PLANE · RECTANGLE · SQUARE · CIRCLE</div>
+    <div className="card-footer">X/Y PLANE · RECTANGLE · SQUARE · CIRCLE · 360° AZIMUTH</div>
   </article>;
 }
 
