@@ -71,9 +71,7 @@ function OneDView({ heading, pitch }) {
   const points = dataRef.current?.points || [];
   const h = degToRad(norm(heading));
   const p = degToRad(pitch || 0);
-  // Exact horizontal screen-right vector of the 3D camera.
   const right = [Math.cos(h), 0, -Math.sin(h)];
-  // Exact screen-up vector of the 3D camera, including its vertical pitch.
   const up = [Math.sin(h) * Math.sin(p), Math.cos(p), Math.cos(h) * Math.sin(p)];
   const project = (point) => {
     const x = Number(point[0] || 0), y = Number(point[1] || 0), z = Number(point[2] || 0);
@@ -100,6 +98,9 @@ function OneDView({ heading, pitch }) {
   const projectionLabel = axis === 'x'
     ? `CAMERA RIGHT · AZ ${Math.round(heading)}°`
     : `CAMERA UP · AZ ${Math.round(heading)}° · PITCH ${Math.round(pitch || 0)}°`;
+  const centroidStyle = centroidProjected === null ? undefined : axis === 'x'
+    ? { left: `${toPercent(centroidProjected)}%`, top: '50%' }
+    : { left: '50%', top: `${100 - toPercent(centroidProjected)}%` };
 
   return <article className="view-card one-d-card">
     <div className="card-head"><span>1D</span><small>ONE-DIMENSIONAL SPATIAL PROJECTION · {axisLabel}-AXIS</small><span className="angle-readout">{String(Math.round(heading)).padStart(3, '0')}°</span></div>
@@ -113,10 +114,7 @@ function OneDView({ heading, pitch }) {
         ? <i key={i} className="one-d-cloud-dot" style={{ left: `${toPercent(v)}%`, top: '50%' }}/>
         : <i key={i} className="one-d-cloud-dot" style={{ left: '50%', top: `${100 - toPercent(v)}%` }}/>
       )}
-      {centroidProjected !== null && <i className="one-d-centroid" style={axis === 'x'
-        ? { left: `${toPercent(centroidProjected)}%`, top: '50%' }
-        : { left: '50%', top: `${100 - toPercent(centroidProjected)}%` }
-      />}
+      {centroidProjected !== null ? <i className="one-d-centroid" style={centroidStyle}/> : null}
       <span className="one-d-sync-indicator">● 3D SYNC · {Math.round(heading)}° · PITCH {Math.round(pitch || 0)}°</span>
       <span className="one-d-space-axis-label">1D SPACE · {axisLabel} · PAN + ZOOM · {projectionLabel}</span>
       {!points.length && <span className="one-d-viewport-hint">LOADING BACKEND POINTS…</span>}
