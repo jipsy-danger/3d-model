@@ -9,59 +9,200 @@ const norm = (a) => ((a % 360) + 360) % 360;
 const degToRad = (d) => (d * Math.PI) / 180;
 
 function OneDView({ heading }) {
+  const mount = useRef(null);
+  const controlsRef = useRef(null);
   const [mode, setMode] = useState('points');
   const [axis, setAxis] = useState('x');
-  const [viewport, setViewport] = useState({ pan: 0, zoom: 1 });
-  const drag = useRef(null);
-  const points = Array.from({ length: 45 }, (_, i) => 5 + i * 2.05);
-  const zoom = viewport.zoom;
-  const axisToScreen = (value) => 50 + (value - 50 + viewport.pan) * zoom;
-  const onPointerDown = (event) => {
-    event.currentTarget.setPointerCapture(event.pointerId);
-    drag.current = { x: event.clientX, y: event.clientY, pan: viewport.pan };
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const root = mount.current;
+    if (!root) return undefined;
+    let dead = false;
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x05080a);
+    const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 200);
+    camera.position.set(0, 5.5, -7.5);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setClearColor(0x05080a, 1);
+    renderer.domElement.style.display = 'block';
+    renderer.domElement.style.width = '100%';
+    renderer.domElement.style.height = '100%';
+    renderer.domElement.style.touchAction = 'none';
+    root.appendChild(renderer.domElement);
+
+    const floorY = -1.15;
+    const floor = new THREE.GridHelper(18, 36, 0x31515c, 0x172a31);
+    floor.position.y = floorY;
+    scene.add(floor);
+
+    const axes = new THREE.AxesHelper(3.5);
+    axes.position.set(-4, floorY, -4);
+    scene.add(axes);
+
+    const base = new THREE.Mesh(
+      new THREE.CircleGeometry(2.8, 64),
+      new THREE.MeshBasicMaterial({ color: 0x0c171b, transparent: true, opacity: 0.75, side: THREE.DoubleSide })
+    );
+    base.rotation.x = -Math.PI / 2;
+    base.position.y = floorY + 0.002;
+    scene.add(base);
+
+    const solidMaterial = new THREE.MeshBasicMaterial({ color: 0x788f98, side: THREE.DoubleSide });
+    const wireMaterial = new THREE.LineBasicMaterial({ color: 0x9bf5ff });
+    const centroidMaterial = new THREE.MeshBasicMaterial({ color: 0x76ff91, depthTest: false, depthWrite: false });
+    const xAxisMaterial = new THREE.LineBasicMaterial({ color: 0x76ff91, transparent: true, opacity: 0.8, depthTest: false, depthWrite: false });
+    let solid = null;
+    let wire = null;
+    let centroid = null;
+    let xAxis = null;
+
+    const buildRawCube = (raw) => {
+      const vertices = raw?.vertices;
+      if (!Array.isArray(vertices) || vertices.length !== 8) return null;
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices.flat().map(Number)), 3));
+      geometry.setIndex([0,1,2,0,2,3,4,6,5,4,7,6,0,4,5,0,5,1,3,2,6,3,6,7,1,5,6,1,6,2,0,3,7,0,7,4]);
+      geometry.computeVertexNormals();
+      return geometry;
+    };
+
+    const renderRaw = (raw, centroidPoint) => {
+      const geometry = buildRawCube(raw);
+      if (!geometry) return;
+      if (solid) { scene.remove(solid); solid.geometry.dispose(); }
+      if (wire) { scene.remove(wire); wire.geometry.dispose(); }
+      if (centroid) { scene.remove(centroid); centroid.geometry.dispose(); }
+      if (xAxis) { scene.remove(xAxis); xAxis.geometry.dispose(); }
+      solid = new THREE.Mesh(geometry, solidMaterial);
+      scene.add(solid);
+      wire = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), wireMaterial);
+      wire.scale.setScalar(1.001);
+      scene.add(wire);
+      const point = Array.isArray(centroidPoint) ? centroidPoint.map(Number) : [0, 0, 0];
+      xAxis = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(-100, point[1] || 0, point[2] || 0),
+        new THREE.Vector3(100, point[1] || 0, point[2] || 0)
+      ]), xAxisMaterial);
+      xAxis.renderOrder = 999;
+      scene.add(xAxis);
+      centroid = new THREE.Mesh(new THREE.SphereGeometry(0.17, 24, 24), centroidMaterial);
+      centroid.position.set(point[0] || 0, point[1] || 0, point[2] || 0);
+      centroid.renderOrder = 1000;
+      scene.add(centroid);
+      setReady(true);
+    };
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 0, 0);
+    controls.enableRotate = true;
+    controls.enablePan = true;
+    controls.enableZoom = true;
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.075;
+    controls.rotateSpeed = 0.9;
+    controls.panSpeed = 1;
+    controls.zoomSpeed = 1;
+    controls.minDistance = 3;
+    controls.maxDistance = 35;
+    controls.minPolarAngle = 0.12;
+    controls.maxPolarAngle = Math.PI - 0.12;
+    controls.screenSpacePanning = true;
+    controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+    controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+    controlsRef.current = controls;
+
+    const onContextMenu = (event) => event.preventDefault();
+    renderer.domElement.addEventListener('contextmenu', onContextMenu);
+    const resize = () => {
+      const w = Math.max(1, root.clientWidth);
+      const h = Math.max(1, root.clientHeight);
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    };
+    const ro = new ResizeObserver(resize);
+    ro.observe(root);
+    resize();
+
+    controls.update();
+    fetch(`${API}/api/frame`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (!dead && d?.input?.vertices) renderRaw(d.input, d.centroid); })
+      .catch(() => {});
+
+    let af = 0;
+    const loop = () => {
+      if (dead) return;
+      controls.update();
+      renderer.render(scene, camera);
+      af = requestAnimationFrame(loop);
+    };
+    loop();
+
+    return () => {
+      dead = true;
+      cancelAnimationFrame(af);
+      ro.disconnect();
+      controls.dispose();
+      controlsRef.current = null;
+      renderer.domElement.removeEventListener('contextmenu', onContextMenu);
+      if (solid) solid.geometry.dispose();
+      if (wire) { wire.geometry.dispose(); wire.material.dispose(); }
+      if (centroid) centroid.geometry.dispose();
+      if (xAxis) xAxis.geometry.dispose();
+      solidMaterial.dispose();
+      wireMaterial.dispose();
+      centroidMaterial.dispose();
+      xAxisMaterial.dispose();
+      base.geometry.dispose();
+      base.material.dispose();
+      renderer.dispose();
+      root.innerHTML = '';
+    };
+  }, []);
+
+  useEffect(() => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+    const radius = Math.max(0.001, cameraRadius(controls.object, controls.target));
+    const a = degToRad(norm(heading));
+    controls.object.position.x = controls.target.x + Math.sin(a) * radius;
+    controls.object.position.z = controls.target.z + Math.cos(a) * radius;
+    controls.update();
+  }, [heading]);
+
+  const resetView = () => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+    controls.object.position.set(0, 5.5, -7.5);
+    controls.target.set(0, 0, 0);
+    controls.update();
   };
-  const onPointerMove = (event) => {
-    if (!drag.current) return;
-    const size = Math.max(1, axis === 'x' ? event.currentTarget.clientWidth : event.currentTarget.clientHeight);
-    const delta = (axis === 'x' ? event.clientX - drag.current.x : drag.current.y - event.clientY) / size * 100;
-    setViewport((v) => ({ ...v, pan: drag.current.pan + delta / Math.max(v.zoom, .01) }));
-  };
-  const stopDrag = () => { drag.current = null; };
-  const onWheel = (event) => {
-    event.preventDefault();
-    const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
-    setViewport((v) => ({ ...v, zoom: Math.min(4, Math.max(.65, v.zoom * factor)) }));
-  };
-  const selectAxis = (nextAxis) => {
-    setAxis(nextAxis);
-    setViewport({ pan: 0, zoom: 1 });
-  };
-  const tickValues = Array.from({ length: 11 }, (_, i) => i * 10);
-  const position = (value) => axisToScreen(value);
+
   return <article className="view-card one-d-card">
-    <div className="card-head"><span>1D</span><small>3D → 1D spatial projection · axis selectable · pan · zoom · synced</small><span className="angle-readout">{String(Math.round(heading)).padStart(3, '0')}°</span></div>
-    <div className={`one-d-space one-d-interactive axis-${axis}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={stopDrag} onPointerCancel={stopDrag} onWheel={onWheel}>
-      <div className="one-d-space-grid"/>
-      <div className="one-d-axis-line"/>
-      <div className="one-d-ticks">{tickValues.map((v) => <span key={v} style={axis === 'x' ? { left: `${position(v)}%` } : { top: `${100 - position(v)}%` }}>{v}</span>)}</div>
-      {mode === 'points' && points.map((value, i) => <i key={i} className="one-d-cloud-dot" style={axis === 'x' ? { left: `${position(value)}%`, top: '50%' } : { left: '50%', top: `${100 - position(value)}%` }}/>) }
-      {mode === 'line' && <div className="one-d-line-profile" style={axis === 'x' ? { left: `${position(5)}%`, width: `${(position(90) - position(5))}%`, top: '50%' } : { top: `${100 - position(90)}%`, height: `${(position(90) - position(5))}%`, left: '50%' }}/>} 
-      <span className="one-d-space-axis-label">{axis.toUpperCase()} AXIS · METERS</span>
+    <div className="card-head"><span>1D</span><small>3D SPACE BASE · orbit · pan · zoom · synced</small><span className="angle-readout">{String(Math.round(heading)).padStart(3, '0')}°</span></div>
+    <div className="one-d-space one-d-3d-stage" ref={mount}>
       <span className="one-d-sync-indicator">● 3D SYNC · {Math.round(heading)}°</span>
-      <span className="one-d-viewport-hint">DRAG · PAN {axis.toUpperCase()} &nbsp; WHEEL · ZOOM {axis.toUpperCase()}</span>
+      <span className="one-d-space-axis-label">1D SPACE · {axis.toUpperCase()} AXIS</span>
+      {!ready && <span className="one-d-viewport-hint">LOADING RAW CUBOID…</span>}
     </div>
     <div className="one-d-controls">
       <button className={mode === 'points' ? 'selected' : ''} onClick={() => setMode('points')}>✦ POINTS</button>
       <button className={mode === 'line' ? 'selected' : ''} onClick={() => setMode('line')}>⌁ LINE</button>
       <span className="axis-options-label">AXIS</span>
-      <button className={axis === 'x' ? 'selected axis-option' : 'axis-option'} type="button" onClick={() => selectAxis('x')}>X-AXIS</button>
-      <button className={axis === 'y' ? 'selected axis-option' : 'axis-option'} type="button" onClick={() => selectAxis('y')}>Y-AXIS</button>
-      <button type="button" onClick={() => setViewport({ pan: 0, zoom: 1 })}>RESET VIEW</button>
-      <span className="auto-toggle"><b/> AUTO SCALE</span>
-      <span className="grow"/><span className="axis-select">{axis.toUpperCase()}-AXIS · {Math.round(zoom * 100)}%</span>
+      <button className={axis === 'x' ? 'selected axis-option' : 'axis-option'} type="button" onClick={() => setAxis('x')}>X-AXIS</button>
+      <button className={axis === 'y' ? 'selected axis-option' : 'axis-option'} type="button" onClick={() => setAxis('y')}>Y-AXIS</button>
+      <button type="button" onClick={resetView}>RESET VIEW</button>
+      <span className="auto-toggle"><b/> 3D CONTROLS</span>
+      <span className="grow"/><span className="axis-select">ORBIT · PAN · ZOOM</span>
     </div>
   </article>;
 }
+
+function cameraRadius(camera, target) { return camera.position.distanceTo(target); }
 
 function TwoDView({ heading }) {
   const [shape, setShape] = useState('points');
