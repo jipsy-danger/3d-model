@@ -53,6 +53,65 @@ function GridView({ heading }) {
   );
 }
 
+function makeDegreeSprite(text) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 160;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.font = 'bold 20px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#8fb6c2';
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(0.78, 0.31, 1);
+  return sprite;
+}
+
+function add3DRuler(scene) {
+  const radius = 3.28;
+  const rulerGroup = new THREE.Group();
+  rulerGroup.name = '360-degree-ruler';
+
+  const circlePoints = [];
+  for (let i = 0; i <= 128; i += 1) {
+    const angle = (i / 128) * Math.PI * 2;
+    circlePoints.push(new THREE.Vector3(Math.sin(angle) * radius, -1.485, Math.cos(angle) * radius));
+  }
+  const circleGeometry = new THREE.BufferGeometry().setFromPoints(circlePoints);
+  rulerGroup.add(new THREE.Line(circleGeometry, new THREE.LineBasicMaterial({ color: 0x477b88, transparent: true, opacity: 0.72 })));
+
+  for (let degree = 0; degree < 360; degree += 10) {
+    const angle = (degree * Math.PI) / 180;
+    const major = degree % 30 === 0;
+    const outer = radius + 0.13;
+    const inner = radius - (major ? 0.26 : 0.15);
+    const points = [
+      new THREE.Vector3(Math.sin(angle) * inner, -1.48, Math.cos(angle) * inner),
+      new THREE.Vector3(Math.sin(angle) * outer, -1.48, Math.cos(angle) * outer),
+    ];
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    rulerGroup.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({
+      color: major ? 0x8fe9f5 : 0x456b75,
+      transparent: true,
+      opacity: major ? 0.9 : 0.6,
+    })));
+
+    if (major) {
+      const label = makeDegreeSprite(`${degree}°`);
+      const labelRadius = radius + 0.48;
+      label.position.set(Math.sin(angle) * labelRadius, -1.43, Math.cos(angle) * labelRadius);
+      rulerGroup.add(label);
+    }
+  }
+
+  scene.add(rulerGroup);
+}
+
 export default function Viewer() {
   const mount = useRef(null);
   const three = useRef(null);
@@ -117,6 +176,9 @@ export default function Viewer() {
       baseEdge.position.y = -1.52;
       scene.add(baseEdge);
 
+      // 360° azimuth ruler physically surrounds the 3D space, matching the 2.5D ruler.
+      add3DRuler(scene);
+
       const controls = new OrbitControls(camera, renderer.domElement);
       controls.target.set(0, -0.35, 0);
       controls.enableDamping = true;
@@ -132,7 +194,7 @@ export default function Viewer() {
       controls.screenSpacePanning = true;
       renderer.domElement.addEventListener('contextmenu', (event) => event.preventDefault());
       three.current = { camera, controls };
-      setStatus('3D READY · CUBOID');
+      setStatus('3D READY · CUBOID · 360°');
 
       const resize = () => {
         const width = Math.max(1, root.clientWidth);
@@ -172,6 +234,13 @@ export default function Viewer() {
         cubeMaterial.dispose();
         edgeGeometry.dispose();
         edgeMaterial.dispose();
+        scene.traverse((object) => {
+          if (object.geometry) object.geometry.dispose();
+          if (object.material) {
+            if (object.material.map) object.material.map.dispose();
+            object.material.dispose();
+          }
+        });
         renderer.dispose();
         root.innerHTML = '';
         three.current = null;
@@ -185,7 +254,7 @@ export default function Viewer() {
         const pointMaterial = new THREE.PointsMaterial({ color: 0xa7efff, size: 0.065, sizeAttenuation: true, transparent: true, opacity: 0.8 });
         scene.add(new THREE.Points(pointGeometry, pointMaterial));
         setStatus(`BACKEND · ${data.point_count ?? data.points.length} PTS`);
-      }).catch(() => setStatus('3D READY · LOCAL CUBOID'));
+      }).catch(() => setStatus('3D READY · LOCAL CUBOID · 360°'));
     } catch (error) {
       console.error(error);
       setStatus('3D RENDER ERROR');
@@ -237,7 +306,7 @@ export default function Viewer() {
       <header className="topbar"><div><h1>Foveated LiDAR Mapping</h1><p>3D model · synchronized 2D · synchronized 2.5D</p></div><div className="header-readout"><span className="dot" /> {status}</div></header>
       <section className="toolbar panel"><div className="pill">3 VIEWS</div><div className="pill muted">360° / 16 RINGS</div><div className="grow" /><button className={state.current.sync ? 'btn active' : 'btn'} onClick={toggleSync}><span className="tiny-dot" /> {state.current.sync ? 'SYNC ON' : 'SYNC OFF'}</button><button className="btn" onClick={() => turn(-5)}>↶ 5°</button><button className="btn" onClick={() => turn(5)}>5° ↷</button></section>
       <section className="views">
-        <article className="view-card"><div className="card-head"><span>3D</span><small>Interactive 3D space · orbit · pan · zoom</small></div><div className="three-stage" ref={mount} /><div className="corner axis">X&nbsp; <i>Y</i>&nbsp; Z</div><div className="card-footer">LEFT DRAG · ORBIT &nbsp;&nbsp; RIGHT DRAG · PAN &nbsp;&nbsp; WHEEL · ZOOM</div></article>
+        <article className="view-card"><div className="card-head"><span>3D</span><small>Interactive 3D space · orbit · pan · zoom · 360° ruler</small></div><div className="three-stage" ref={mount} /><div className="corner axis">X&nbsp; <i>Y</i>&nbsp; Z</div><div className="card-footer">LEFT DRAG · ORBIT &nbsp;&nbsp; RIGHT DRAG · PAN &nbsp;&nbsp; WHEEL · ZOOM &nbsp;&nbsp; 360° AZIMUTH</div></article>
         <PolarView heading={heading} />
         <GridView heading={heading} />
       </section>
