@@ -161,46 +161,172 @@ function add3DRuler(scene) {
 
 function ThreeView({ onHeading, onReset }) {
   const mount = useRef(null);
+  const headingCallback = useRef(onHeading);
+  const resetCallback = useRef(onReset);
+  headingCallback.current = onHeading;
+  resetCallback.current = onReset;
+
   useEffect(() => {
     const root = mount.current;
     if (!root) return undefined;
     let dead = false;
-    const scene = new THREE.Scene(); scene.background = new THREE.Color(0x05080a);
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x05080a);
+
     const camera = new THREE.PerspectiveCamera(48, 1, .05, 200);
-    // Reset/reference view is 180°: camera sits on -Z.
-    camera.position.set(0, 5.5, -7.5);
+    // 180° reference/reset view: camera is on the -Z side.
+    const defaultPosition = new THREE.Vector3(0, 5.5, -7.5);
+    const defaultTarget = new THREE.Vector3(0, -.35, 0);
+    camera.position.copy(defaultPosition);
+
     const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2)); renderer.setClearColor(0x05080a, 1); root.appendChild(renderer.domElement);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setClearColor(0x05080a, 1);
+    renderer.domElement.style.display = 'block';
+    renderer.domElement.style.width = '100%';
+    renderer.domElement.style.height = '100%';
+    renderer.domElement.style.touchAction = 'none';
+    root.appendChild(renderer.domElement);
+
     scene.add(new THREE.HemisphereLight(0xdff7ff, 0x162027, 2.2));
-    const key = new THREE.DirectionalLight(0xffffff, 4); key.position.set(6, 10, 8); scene.add(key);
-    const fill = new THREE.DirectionalLight(0x73dfff, 2.5); fill.position.set(-7, 5, -5); scene.add(fill);
-    const floor = new THREE.GridHelper(18, 36, 0x31515c, 0x172a31); floor.position.y = -1.55; scene.add(floor);
-    const axes = new THREE.AxesHelper(3.5); axes.position.set(-4, -1.54, -4); scene.add(axes);
+    const key = new THREE.DirectionalLight(0xffffff, 4);
+    key.position.set(6, 10, 8);
+    scene.add(key);
+    const fill = new THREE.DirectionalLight(0x73dfff, 2.5);
+    fill.position.set(-7, 5, -5);
+    scene.add(fill);
+
+    const floor = new THREE.GridHelper(18, 36, 0x31515c, 0x172a31);
+    floor.position.y = -1.55;
+    scene.add(floor);
+    const axes = new THREE.AxesHelper(3.5);
+    axes.position.set(-4, -1.54, -4);
+    scene.add(axes);
+
     const geo = new THREE.BoxGeometry(2.3, 2.3, 2.3);
     const mat = new THREE.MeshStandardMaterial({ color: 0x7896a0, metalness: .15, roughness: .35, emissive: 0x13272e, emissiveIntensity: .7 });
-    const cube = new THREE.Mesh(geo, mat); cube.position.set(0, -.4, 0); scene.add(cube);
-    cube.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0x9bf5ff })));
-    cube.add(new THREE.Mesh(new THREE.SphereGeometry(.1, 20, 20), new THREE.MeshBasicMaterial({ color: 0x76ff91 })));
+    const cube = new THREE.Mesh(geo, mat);
+    cube.position.set(0, -.4, 0);
+    scene.add(cube);
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0x9bf5ff }));
+    cube.add(edges);
+    const marker = new THREE.Mesh(new THREE.SphereGeometry(.1, 20, 20), new THREE.MeshBasicMaterial({ color: 0x76ff91 }));
+    cube.add(marker);
+
     const base = new THREE.Mesh(new THREE.CircleGeometry(2.8, 64), new THREE.MeshBasicMaterial({ color: 0x0c171b, transparent: true, opacity: .75, side: THREE.DoubleSide }));
-    base.rotation.x = -Math.PI / 2; base.position.y = -1.54; scene.add(base); add3DRuler(scene);
+    base.rotation.x = -Math.PI / 2;
+    base.position.y = -1.54;
+    scene.add(base);
+    add3DRuler(scene);
+
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, -.35, 0); controls.enableDamping = true; controls.dampingFactor = .075; controls.enablePan = true; controls.enableZoom = true; controls.rotateSpeed = .9; controls.panSpeed = 1; controls.zoomSpeed = 1; controls.minDistance = 3; controls.maxDistance = 35; controls.screenSpacePanning = true;
-    renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
-    const resize = () => { const w = Math.max(1, root.clientWidth), h = Math.max(1, root.clientHeight); renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); };
-    const ro = new ResizeObserver(resize); ro.observe(root); resize();
-    const changed = () => { const o = camera.position.clone().sub(controls.target); onHeading(norm(Math.atan2(o.x, o.z) * 180 / Math.PI)); };
+    controls.target.copy(defaultTarget);
+    controls.enableDamping = true;
+    controls.dampingFactor = .075;
+    controls.enableRotate = true;
+    controls.enablePan = true;
+    controls.enableZoom = true;
+    controls.rotateSpeed = .9;
+    controls.panSpeed = 1;
+    controls.zoomSpeed = 1;
+    controls.minDistance = 3;
+    controls.maxDistance = 35;
+    controls.minPolarAngle = .12;
+    controls.maxPolarAngle = Math.PI - .12;
+    controls.screenSpacePanning = true;
+    controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.PAN,
+    };
+    controls.touches = {
+      ONE: THREE.TOUCH.ROTATE,
+      TWO: THREE.TOUCH.DOLLY_PAN,
+    };
+    controls.saveState();
+
+    const onContextMenu = (event) => event.preventDefault();
+    renderer.domElement.addEventListener('contextmenu', onContextMenu);
+
+    const resize = () => {
+      const w = Math.max(1, root.clientWidth);
+      const h = Math.max(1, root.clientHeight);
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    };
+    const ro = new ResizeObserver(resize);
+    ro.observe(root);
+    resize();
+
+    const changed = () => {
+      const offset = camera.position.clone().sub(controls.target);
+      const horizontal = Math.hypot(offset.x, offset.z);
+      if (horizontal > .0001) {
+        headingCallback.current(norm(Math.atan2(offset.x, offset.z) * 180 / Math.PI));
+      }
+    };
     controls.addEventListener('change', changed);
+    changed();
+
+    const reset3D = () => {
+      controls.enabled = true;
+      controls.target.copy(defaultTarget);
+      camera.position.copy(defaultPosition);
+      controls.update();
+      controls.saveState();
+      headingCallback.current(180);
+    };
+    resetCallback.current = reset3D;
+
     let af = 0;
-    const loop = () => { if (dead) return; controls.update(); renderer.render(scene, camera); af = requestAnimationFrame(loop); }; loop();
+    const loop = () => {
+      if (dead) return;
+      controls.update();
+      renderer.render(scene, camera);
+      af = requestAnimationFrame(loop);
+    };
+    loop();
+
     fetch(`${API}/api/frame`).then(r => r.ok ? r.json() : null).then(d => {
       if (dead || !d?.points?.length) return;
-      const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(d.points.flat()), 3));
+      const pg = new THREE.BufferGeometry();
+      pg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(d.points.flat()), 3));
       scene.add(new THREE.Points(pg, new THREE.PointsMaterial({ color: 0xa7efff, size: .065, sizeAttenuation: true, transparent: true, opacity: .8 })));
     }).catch(() => {});
-    return () => { dead = true; cancelAnimationFrame(af); ro.disconnect(); controls.dispose(); renderer.dispose(); root.innerHTML = ''; };
-  }, [onHeading]);
 
-  return <article className="view-card three-card"><div className="card-head"><span>3D</span><small>Interactive 3D space · orbit · pan · zoom</small></div><div className="three-stage" ref={mount} /><div className="three-tools"><span>LEFT DRAG · ORBIT</span><span>RIGHT DRAG · PAN</span><span>WHEEL · ZOOM</span><button onClick={onReset}>RESET · 180°</button></div></article>;
+    return () => {
+      dead = true;
+      cancelAnimationFrame(af);
+      ro.disconnect();
+      controls.removeEventListener('change', changed);
+      renderer.domElement.removeEventListener('contextmenu', onContextMenu);
+      controls.dispose();
+      geo.dispose();
+      mat.dispose();
+      edges.geometry.dispose();
+      edges.material.dispose();
+      marker.geometry.dispose();
+      marker.material.dispose();
+      base.geometry.dispose();
+      base.material.dispose();
+      renderer.dispose();
+      root.innerHTML = '';
+    };
+  }, []);
+
+  return (
+    <article className="view-card three-card">
+      <div className="card-head"><span>3D</span><small>Interactive 3D space · orbit · pan · zoom</small></div>
+      <div className="three-stage" ref={mount} />
+      <div className="three-tools">
+        <span>LEFT DRAG · ORBIT</span>
+        <span>RIGHT DRAG · PAN</span>
+        <span>MIDDLE / WHEEL · ZOOM</span>
+        <button onClick={() => resetCallback.current?.()}>RESET · 180°</button>
+      </div>
+    </article>
+  );
 }
 
 export default function ViewerV2() {
