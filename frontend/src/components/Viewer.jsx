@@ -145,7 +145,7 @@ export default function Viewer() {
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0x05080a);
       const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 200);
-      // Default camera is on +Z so the front/top of the 3D ruler is 0°.
+      // Reset/default side: the same perspective used by the requested reference view.
       camera.position.set(0, 5.5, 7.5);
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -329,8 +329,8 @@ export default function Viewer() {
     const viewer = three.current;
     if (!viewer) return;
     state.current.applyingRemote = false;
-    viewer.camera.position.copy(viewer.defaultPosition);
-    viewer.controls.target.copy(viewer.defaultTarget);
+    viewer.camera.position.set(0, 5.5, 7.5);
+    viewer.controls.target.set(0, -0.35, 0);
     viewer.controls.update();
     state.current.heading = 0;
     state.current.pitch = 35;
