@@ -10,11 +10,12 @@ const degToRad = (d) => (d * Math.PI) / 180;
 
 function OneDView({ heading }) {
   const [mode, setMode] = useState('points');
+  const [axis, setAxis] = useState('x');
   const [viewport, setViewport] = useState({ pan: 0, zoom: 1 });
   const drag = useRef(null);
   const points = Array.from({ length: 45 }, (_, i) => ({ x: 5 + i * 2.05, y: 50 - Math.abs(Math.sin(i * 0.7)) * 7 - (i % 9 === 0 ? (i % 17) * 1.2 : 0) }));
   const zoom = viewport.zoom;
-  const xToScreen = (x) => 50 + (x - 50 + viewport.pan) * zoom;
+  const xToScreen = (value) => 50 + (value - 50 + viewport.pan) * zoom;
   const onPointerDown = (event) => {
     event.currentTarget.setPointerCapture(event.pointerId);
     drag.current = { x: event.clientX, pan: viewport.pan };
@@ -31,7 +32,34 @@ function OneDView({ heading }) {
     const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
     setViewport((v) => ({ ...v, zoom: Math.min(4, Math.max(.65, v.zoom * factor)) }));
   };
-  return <article className="view-card one-d-card"><div className="card-head"><span>1D</span><small>X-axis projection · point + line · pan X · zoom X · 3D linked</small><span className="angle-readout">{String(Math.round(heading)).padStart(3, '0')}°</span></div><div className="one-d-space one-d-interactive" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={stopDrag} onPointerCancel={stopDrag} onWheel={onWheel}><div className="one-d-plot-grid" style={{ transform: `translateX(${viewport.pan * zoom}%) scaleX(${zoom})`, transformOrigin: '50% 50%' }}/><div className="one-d-axis"/><div className="one-d-zero"/>{mode === 'points' && points.map((p, i) => <i key={i} className="one-d-cloud-dot" style={{ left: `${xToScreen(p.x)}%`, top: `${p.y}%` }}/>) }{mode === 'line' && <div className="one-d-line-profile" style={{ transform: `translateX(${viewport.pan * zoom}%) scaleX(${zoom})`, transformOrigin: '50% 50%' }}/>}<span className="one-d-label x-label">X (meters)</span><span className="one-d-label y1-label">Intensity / Height</span><span className="one-d-viewport-hint">DRAG · PAN X &nbsp; WHEEL · ZOOM X</span></div><div className="one-d-controls"><button className={mode === 'points' ? 'selected' : ''} onClick={() => setMode('points')}>✦ POINTS</button><button className={mode === 'line' ? 'selected' : ''} onClick={() => setMode('line')}>⌁ LINE</button><button type="button" onClick={() => setViewport({ pan: 0, zoom: 1 })}>RESET VIEW</button><span className="auto-toggle"><b/> AUTO SCALE</span><span className="grow"/><span className="axis-select">X-AXIS · {Math.round(zoom * 100)}%</span></div></article>;
+  const selectAxis = (nextAxis) => {
+    setAxis(nextAxis);
+    setViewport({ pan: 0, zoom: 1 });
+  };
+  const axisValue = (point, index) => axis === 'x' ? point.x : (5 + index * 2.05);
+  return <article className="view-card one-d-card">
+    <div className="card-head"><span>1D</span><small>3D → 1D projection · axis selectable · pan X · zoom X · synced</small><span className="angle-readout">{String(Math.round(heading)).padStart(3, '0')}°</span></div>
+    <div className="one-d-space one-d-interactive" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={stopDrag} onPointerCancel={stopDrag} onWheel={onWheel}>
+      <div className="one-d-plot-grid" style={{ transform: `translateX(${viewport.pan * zoom}%) scaleX(${zoom})`, transformOrigin: '50% 50%' }}/>
+      <div className="one-d-axis"/><div className="one-d-zero"/>
+      {mode === 'points' && points.map((p, i) => <i key={i} className="one-d-cloud-dot" style={{ left: `${xToScreen(axisValue(p, i))}%`, top: `${p.y}%` }}/>) }
+      {mode === 'line' && <div className="one-d-line-profile" style={{ transform: `translateX(${viewport.pan * zoom}%) scaleX(${zoom})`, transformOrigin: '50% 50%' }}/>} 
+      <span className="one-d-label x-label">{axis.toUpperCase()} (meters)</span>
+      <span className="one-d-label y1-label">Intensity / Height</span>
+      <span className="one-d-viewport-hint">DRAG · PAN {axis.toUpperCase()} &nbsp; WHEEL · ZOOM {axis.toUpperCase()}</span>
+      <span className="one-d-sync-indicator">● 3D SYNC · {Math.round(heading)}°</span>
+    </div>
+    <div className="one-d-controls">
+      <button className={mode === 'points' ? 'selected' : ''} onClick={() => setMode('points')}>✦ POINTS</button>
+      <button className={mode === 'line' ? 'selected' : ''} onClick={() => setMode('line')}>⌁ LINE</button>
+      <span className="axis-options-label">AXIS</span>
+      <button className={axis === 'x' ? 'selected axis-option' : 'axis-option'} type="button" onClick={() => selectAxis('x')}>X-AXIS</button>
+      <button className={axis === 'y' ? 'selected axis-option' : 'axis-option'} type="button" onClick={() => selectAxis('y')}>Y-AXIS</button>
+      <button type="button" onClick={() => setViewport({ pan: 0, zoom: 1 })}>RESET VIEW</button>
+      <span className="auto-toggle"><b/> AUTO SCALE</span>
+      <span className="grow"/><span className="axis-select">{axis.toUpperCase()}-AXIS · {Math.round(zoom * 100)}%</span>
+    </div>
+  </article>;
 }
 
 function TwoDView({ heading }) {
