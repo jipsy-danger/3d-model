@@ -76,7 +76,7 @@ function add3DRuler(scene) {
   scene.add(group);
 }
 
-function ThreeView({ onHeading, resetRef }) {
+function ThreeView({ onHeading, resetRef, rotateRef }) {
   const mount = useRef(null); const headingCallback = useRef(onHeading); headingCallback.current = onHeading; const resetCallback = useRef(null);
   useEffect(() => {
     const root = mount.current; if (!root) return undefined; let dead = false;
@@ -95,35 +95,35 @@ function ThreeView({ onHeading, resetRef }) {
     const resize = () => { const w = Math.max(1, root.clientWidth), h = Math.max(1, root.clientHeight); renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }; const ro = new ResizeObserver(resize); ro.observe(root); resize();
     const changed = () => { const offset = camera.position.clone().sub(controls.target); const horizontal = Math.hypot(offset.x, offset.z); if (horizontal > .0001) headingCallback.current(norm(Math.atan2(offset.x, offset.z) * 180 / Math.PI)); };
     controls.addEventListener('change', changed); changed();
-    const reset3D = () => {
-      controls.enabled = true;
-      controls.stop();
-      controls.target.set(defaultTarget.x, defaultTarget.y, defaultTarget.z);
-      camera.position.set(defaultPosition.x, defaultPosition.y, defaultPosition.z);
-      camera.lookAt(defaultTarget);
+    const reset3D = () => { controls.enabled = true; controls.stop(); controls.target.copy(defaultTarget); camera.position.copy(defaultPosition); camera.lookAt(defaultTarget); controls.update(); controls.saveState(); changed(); headingCallback.current(180); };
+    const rotate3D = (amount) => {
+      const offset = camera.position.clone().sub(controls.target);
+      const angle = degToRad(amount);
+      const x = offset.x * Math.cos(angle) + offset.z * Math.sin(angle);
+      const z = -offset.x * Math.sin(angle) + offset.z * Math.cos(angle);
+      camera.position.set(controls.target.x + x, camera.position.y, controls.target.z + z);
       controls.update();
       changed();
-      headingCallback.current(180);
-      requestAnimationFrame(() => { if (!dead) { camera.position.set(defaultPosition.x, defaultPosition.y, defaultPosition.z); controls.target.set(defaultTarget.x, defaultTarget.y, defaultTarget.z); camera.lookAt(defaultTarget); controls.update(); changed(); } });
     };
-    resetCallback.current = reset3D; if (resetRef) resetRef.current = reset3D;
+    resetCallback.current = reset3D; if (resetRef) resetRef.current = reset3D; if (rotateRef) rotateRef.current = rotate3D;
     let af = 0; const loop = () => { if (dead) return; controls.update(); renderer.render(scene, camera); af = requestAnimationFrame(loop); }; loop();
     fetch(`${API}/api/frame`).then(r => r.ok ? r.json() : null).then(d => { if (dead || !d?.points?.length) return; const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(d.points.flat()), 3)); scene.add(new THREE.Points(pg, new THREE.PointsMaterial({ color: 0xa7efff, size: .065, sizeAttenuation: true, transparent: true, opacity: .8 }))); }).catch(() => {});
-    return () => { dead = true; cancelAnimationFrame(af); ro.disconnect(); controls.removeEventListener('change', changed); renderer.domElement.removeEventListener('contextmenu', onContextMenu); controls.dispose(); geo.dispose(); mat.dispose(); edges.geometry.dispose(); edges.material.dispose(); marker.geometry.dispose(); marker.material.dispose(); base.geometry.dispose(); base.material.dispose(); renderer.dispose(); if (resetRef && resetRef.current === reset3D) resetRef.current = null; root.innerHTML = ''; };
+    return () => { dead = true; cancelAnimationFrame(af); ro.disconnect(); controls.removeEventListener('change', changed); renderer.domElement.removeEventListener('contextmenu', onContextMenu); controls.dispose(); geo.dispose(); mat.dispose(); edges.geometry.dispose(); edges.material.dispose(); marker.geometry.dispose(); marker.material.dispose(); base.geometry.dispose(); base.material.dispose(); renderer.dispose(); if (resetRef && resetRef.current === reset3D) resetRef.current = null; if (rotateRef && rotateRef.current === rotate3D) rotateRef.current = null; root.innerHTML = ''; };
   }, []);
   return <article className="view-card three-card"><div className="card-head"><span>3D</span><small>Interactive 3D space · orbit · pan · zoom</small></div><div className="three-stage" ref={mount} /><div className="three-tools"><span>LEFT DRAG · ORBIT</span><span>RIGHT DRAG · PAN</span><span>MIDDLE / WHEEL · ZOOM</span><button type="button" onClick={() => resetCallback.current?.()}>RESET · 180°</button></div></article>;
 }
 
 export default function ViewerV2() {
-  const [heading, setHeading] = useState(180); const [sync, setSync] = useState(true); const socket = useRef(null); const threeResetRef = useRef(null);
-  useEffect(() => { try { socket.current = new WebSocket(API.replace(/^http/, 'ws') + '/ws/view'); socket.current.onmessage = (e) => { try { const m = JSON.parse(e.data); if (sync && m.type === 'view_state') setHeading(norm(m.heading ?? 180)); } catch {} }; } catch {} return () => { try { socket.current?.close(); } catch {} }; }, [sync]);
+  const [heading, setHeading] = useState(180); const [sync, setSync] = useState(true); const socket = useRef(null); const threeResetRef = useRef(null); const threeRotateRef = useRef(null);
+  useEffect(() => { try { socket.current = new WebSocket(API.replace(/^http/, 'ws') + '/ws/view'); socket.current.onmessage = (e) => { try { const m = JSON.parse(e.data); if (sync && m.type === 'view_state') setHeading(norm(m.heading ?? 180)); } catch {} } } catch {} return () => { try { socket.current?.close(); } catch {} }; }, [sync]);
   const publish = useCallback((h) => { const v = norm(h); setHeading(v); if (sync) { try { socket.current?.send(JSON.stringify({ type: 'view_state', heading: v, pitch: 35, zoom: 1, panX: 0, panY: 0, sync: true })); } catch {} } }, [sync]);
   const reset = useCallback(() => { if (threeResetRef.current) threeResetRef.current(); else publish(180); }, [publish]);
+  const rotate = useCallback((amount) => { if (threeRotateRef.current) threeRotateRef.current(amount); else publish(heading + amount); }, [heading, publish]);
   return (
     <main className="page">
       <header className="topbar"><div><h1>Foveated LiDAR Mapping</h1><p>3D model · 1D profile · 2D projection · 2.5D range map</p></div><div className="header-readout"><span className="dot" />3D RESET · 180° DEFAULT<br />0° TOP · 90° RIGHT · 180° BOTTOM · 270° LEFT</div></header>
-      <section className="toolbar panel"><span className="pill">4 SPACES</span><span className="pill muted">3D → 1D → 2D → 2.5D</span><span className="grow" /><button className={`btn ${sync ? 'active' : ''}`} onClick={() => setSync(v => !v)}>● SYNC {sync ? 'ON' : 'OFF'}</button><button className="btn" onClick={() => publish(heading - 5)}>↶ 5°</button><button className="btn" onClick={() => publish(heading + 5)}>5° ↷</button><button className="btn reset-top" type="button" onClick={reset}>RESET · 180°</button></section>
-      <section className="views"><ThreeView onHeading={publish} resetRef={threeResetRef} /><OneDView heading={heading} /><TwoDView heading={heading} /><TwoFiveDView heading={heading} /></section>
+      <section className="toolbar panel"><span className="pill">4 SPACES</span><span className="pill muted">3D → 1D → 2D → 2.5D</span><span className="grow" /><button className={`btn ${sync ? 'active' : ''}`} onClick={() => setSync(v => !v)}>● SYNC {sync ? 'ON' : 'OFF'}</button><button className="btn" onClick={() => rotate(-5)}>↶ 5°</button><button className="btn" onClick={() => rotate(5)}>5° ↷</button><button className="btn reset-top" type="button" onClick={reset}>RESET · 180°</button></section>
+      <section className="views"><ThreeView onHeading={publish} resetRef={threeResetRef} rotateRef={threeRotateRef} /><OneDView heading={heading} /><TwoDView heading={heading} /><TwoFiveDView heading={heading} /></section>
       <section className="analysis panel"><div><span className="section-kicker">FOV / ORIENTATION</span><strong>{Math.round(heading)}°</strong><small>3D linked heading</small></div><div><span className="section-kicker">PIPELINE</span><strong>3D → 1D → 2D</strong><small>dimensional reduction stages</small></div><div><span className="section-kicker">NEXT</span><strong>2.5D</strong><small>reserved for next implementation</small></div></section>
     </main>
   );
