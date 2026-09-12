@@ -2,6 +2,3 @@
 
 /* Exactly one reset is visible: the reset control inside the 3D space. */
 .toolbar>button:last-child{display:none}
-
-/* Dotted X-axis through the cuboid center. */
-.three-stage{position:relative}.three-stage:after{content:"";position:absolute;left:18%;right:18%;top:50%;height:7px;transform:translateY(-50%);pointer-events:none;background-image:radial-gradient(circle,#ff4f9a 0 2.5px,transparent 2.8px);background-size:14px 7px;background-repeat:repeat-x;filter:drop-shadow(0 0 4px rgba(255,79,154,.7));z-index:5}
