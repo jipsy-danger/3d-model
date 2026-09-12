@@ -23,7 +23,7 @@ async def handle_view_socket(ws: WebSocket):
     await ws.accept()
     clients.add(ws)
     try:
-        await ws.send_json({"type": "view_state", "heading": state["heading"]})
+        await ws.send_json({"type": "view_state", "heading": state["heading"], "pitch": state["pitch"]})
         while True:
             msg = await ws.receive_json()
             if msg.get("type") != "view_state":
@@ -38,7 +38,11 @@ async def handle_view_socket(ws: WebSocket):
                 state["pan_x"] = float(msg["pan_x"])
             if "pan_y" in msg:
                 state["pan_y"] = float(msg["pan_y"])
-            packet = {"type": "view_state", "heading": state["heading"]}
+            packet = {
+                "type": "view_state",
+                "heading": state["heading"],
+                "pitch": state["pitch"],
+            }
             for client in list(clients):
                 try:
                     await client.send_json(packet)
