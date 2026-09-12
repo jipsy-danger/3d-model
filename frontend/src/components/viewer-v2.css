@@ -18,4 +18,15 @@
 .two-d-x-label,.two-d-y-label{position:absolute;color:#8aa6af;font:10px ui-monospace,monospace;z-index:5}.two-d-x-label{right:6%;top:calc(50% + 10px)}.two-d-y-label{left:calc(50% + 8px);top:7%}
 .two-d-card .card-head small,.one-d-card .card-head small{color:#71818a}
 .two-five-card{width:100%}
+
+/* The 2D ruler is the same 360° azimuth reference as the 3D ruler: 0° top, 90° right, 180° bottom, 270° left. */
+.two-d-azimuth-ruler{position:absolute;left:50%;top:50%;width:min(82%,460px);aspect-ratio:1;transform:translate(-50%,-50%);z-index:6;pointer-events:none}
+.two-d-ruler-ring{position:absolute;inset:0;border:1px solid rgba(71,123,136,.82);border-radius:50%;box-shadow:0 0 18px rgba(71,123,136,.10)}
+.two-d-ruler-tick{position:absolute;left:50%;top:50%;width:1px;height:8px;background:rgba(69,107,117,.75);transform-origin:50% 0;}
+.two-d-ruler-tick:after{content:"";position:absolute;left:0;top:0;width:1px;height:8px;background:rgba(69,107,117,.75);transform:translateY(-100%)}
+.two-d-ruler-tick.major{height:13px;background:#8fe9f5;box-shadow:0 0 5px rgba(143,233,245,.25)}
+.two-d-ruler-tick.major:after{height:13px;background:#8fe9f5}
+.two-d-ruler-label{position:absolute;left:50%;top:50%;color:#b9e9f2;font:9px ui-monospace,monospace;white-space:nowrap;text-shadow:0 0 6px rgba(80,180,200,.35)}
+.two-d-ruler-360{left:50%;top:1px;transform:translate(-50%,-50%)}
+
 @media(max-width:1100px){.views>.two-five-card{grid-column:auto}.views{grid-template-columns:1fr}}
