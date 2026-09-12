@@ -10,6 +10,12 @@
 .one-d-ticks.axis-y span{left:calc(50% + 15px);transform:translateY(50%)}
 .one-d-line-profile.axis-y{width:2px;height:auto}
 
-/* 1D footer: input only. */
-.one-d-controls button,.one-d-controls .axis-options-label,.one-d-controls .auto-toggle,.one-d-controls .axis-select{display:none}
-.one-d-controls:before{content:"INPUT · BACKEND POINT CLOUD";color:#8aa6af;font:9px ui-monospace,monospace;letter-spacing:.06em}
+/* 1D footer: keep only the backend input label and the X/Y projection toggle. */
+.one-d-controls .one-d-input-label{display:inline;color:#8aa6af;font:9px ui-monospace,monospace;letter-spacing:.06em}
+.one-d-controls .one-d-axis-toggle-label{display:inline;color:#6f8790;font:8px ui-monospace,monospace;letter-spacing:.05em}
+.one-d-controls button{display:inline-block}
+.one-d-controls .axis-option{min-width:58px}
+
+/* Common top sync control. */
+.sync-button.sync-active{border-color:#48bde0!important;color:#eaffff!important;background:#0b3040!important}
+.sync-button.sync-off{border-color:#4a3d43!important;color:#b8aeb2!important;background:#151114!important}
