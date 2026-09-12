@@ -13,7 +13,7 @@ function OneDView({ heading }) {
   const dataRef = useRef(null);
   const viewRef = useRef({ center: 0, scale: 70 });
   const dragRef = useRef(null);
-  const [mode, setMode] = useState('points');
+  const [mode] = useState('points');
   const [axis, setAxis] = useState('x');
   const [, redraw] = useState(0);
 
@@ -66,7 +66,7 @@ function OneDView({ heading }) {
     };
   }, []);
 
-  useEffect(() => { viewRef.current.center = 0; }, [axis]);
+  useEffect(() => { viewRef.current.center = 0; redraw((v) => v + 1); }, [axis]);
 
   const points = dataRef.current?.points || [];
   const projected = points.map((p) => {
@@ -87,7 +87,6 @@ function OneDView({ heading }) {
   const end = center + 50 / scale;
   for (let v = start; v <= end + tickStep; v += tickStep) ticks.push(Number(v.toFixed(3)));
 
-  const resetView = () => { viewRef.current = { center: 0, scale: 70 }; redraw((v) => v + 1); };
   const axisLabel = axis.toUpperCase();
   const projectionLabel = axis === 'x' ? `X′ = X cos(${Math.round(heading)}°) + Z sin(${Math.round(heading)}°)` : 'Y′ = Y';
 
@@ -95,13 +94,11 @@ function OneDView({ heading }) {
     <div className="card-head"><span>1D</span><small>ONE-DIMENSIONAL SPATIAL PROJECTION · {axisLabel}-AXIS</small><span className="angle-readout">{String(Math.round(heading)).padStart(3, '0')}°</span></div>
     <div className="one-d-space one-d-interactive" ref={mount}>
       <div className="one-d-space-grid"/>
-      <div className={`one-d-axis-line axis-${axis}`}>
-        {mode === 'line' && projected.length > 0 && <div className="one-d-line-profile" style={axis === 'x' ? { left: `${toPercent(min)}%`, width: `${(max - min) * scale}%` } : { top: `${100 - toPercent(max)}%`, height: `${(max - min) * scale}%` }}/>} 
-      </div>
+      <div className={`one-d-axis-line axis-${axis}`}/>
       <div className={`one-d-ticks axis-${axis}`}>
         {ticks.map((v) => <span key={v} style={axis === 'x' ? { left: `${toPercent(v)}%` } : { top: `${100 - toPercent(v)}%` }}>{v}</span>)}
       </div>
-      {mode === 'points' && projected.map((v, i) => axis === 'x'
+      {projected.map((v, i) => axis === 'x'
         ? <i key={i} className="one-d-cloud-dot" style={{ left: `${toPercent(v)}%`, top: '50%' }}/>
         : <i key={i} className="one-d-cloud-dot" style={{ left: '50%', top: `${100 - toPercent(v)}%` }}/>
       )}
@@ -111,14 +108,11 @@ function OneDView({ heading }) {
       <span className="one-d-viewport-hint" style={{ bottom: 27 }}>{span.toFixed(2)} m SOURCE SPAN</span>
     </div>
     <div className="one-d-controls">
-      <button className={mode === 'points' ? 'selected' : ''} onClick={() => setMode('points')}>✦ POINTS</button>
-      <button className={mode === 'line' ? 'selected' : ''} onClick={() => setMode('line')}>⌁ LINE</button>
-      <span className="axis-options-label">AXIS</span>
+      <span className="one-d-input-label">INPUT · BACKEND POINT CLOUD</span>
+      <span className="grow"/>
+      <span className="one-d-axis-toggle-label">AXIS</span>
       <button className={axis === 'x' ? 'selected axis-option' : 'axis-option'} type="button" onClick={() => setAxis('x')}>X-AXIS</button>
       <button className={axis === 'y' ? 'selected axis-option' : 'axis-option'} type="button" onClick={() => setAxis('y')}>Y-AXIS</button>
-      <button type="button" onClick={resetView}>RESET VIEW</button>
-      <span className="auto-toggle"><b/> 1D CONTROLS</span>
-      <span className="grow"/><span className="axis-select">PAN · ZOOM · NO ORBIT</span>
     </div>
   </article>;
 }
@@ -186,11 +180,55 @@ function TwoFiveDView({ heading }) {
 }
 
 export default function ViewerV2(){
-  const [heading,setHeading]=useState(180); const [sync,setSync]=useState(true); const socket=useRef(null); const threeResetRef=useRef(null); const threeRotateRef=useRef(null);
-  const publish=(h)=>{if(!sync||socket.current?.readyState!==WebSocket.OPEN)return;socket.current.send(JSON.stringify({type:'view_state',heading:norm(h)}));};
-  useEffect(()=>{const url=API.replace(/^http/,'ws')+'/ws/view';const ws=new WebSocket(url);socket.current=ws;ws.onmessage=e=>{try{const m=JSON.parse(e.data);if(typeof m.heading==='number')setHeading(norm(m.heading));}catch{}};return()=>{ws.close();socket.current=null;};},[]);
-  const handleHeading=(v)=>{const h=norm(v);setHeading(h);if(sync)publish(h);};
-  const rotateBy=(v)=>{if(threeRotateRef.current)threeRotateRef.current(v);else handleHeading(heading+v);};
-  const resetAll=()=>{if(threeResetRef.current)threeResetRef.current();else handleHeading(180);};
-  return <main className="app-shell"><header className="hero"><div><h1>Foveated LiDAR Mapping</h1><p>3D model · 1D profile · 2D projection · 2.5D range map</p></div><div className="hero-meta"><b>● 3D RESET · 180° DEFAULT</b><small>0° TOP · 90° RIGHT · 180° BOTTOM · 270° LEFT</small></div></header><section className="toolbar"><span className="badge">4 SPACES</span><span className="badge">3D → 1D → 2D → 2.5D</span><span className="grow"/><button className="sync-button" type="button" onClick={()=>setSync(v=>!v)}>• SYNC {sync?'ON':'OFF'}</button><button type="button" onClick={()=>rotateBy(-5)}>↶ 5°</button><button type="button" onClick={()=>rotateBy(5)}>5° ↷</button><button type="button" onClick={resetAll}>RESET · 180°</button></section><section className="view-grid"><ThreeView onHeading={handleHeading} resetRef={threeResetRef} rotateRef={threeRotateRef}/><OneDView heading={heading}/><TwoDView heading={heading}/><TwoFiveDView heading={heading}/></section><section className="analysis panel"><div><span className="section-kicker">FOV / ORIENTATION</span><strong>{Math.round(heading)}°</strong><small>linked heading</small></div><div><span className="section-kicker">INPUT</span><strong>RAW CUBOID</strong><small>backend/data/raw/cube.json</small></div><div><span className="section-kicker">CENTROID</span><strong>BACKEND COMPUTED</strong><small>geometric center of raw vertices · Y = 0</small></div></section></main>;
+  const [threeHeading,setThreeHeading]=useState(180);
+  const [heading,setHeading]=useState(180);
+  const [sync,setSync]=useState(true);
+  const socket=useRef(null);
+  const threeResetRef=useRef(null);
+  const threeRotateRef=useRef(null);
+
+  const publish=(h)=>{
+    if(!sync||socket.current?.readyState!==WebSocket.OPEN)return;
+    socket.current.send(JSON.stringify({type:'view_state',heading:norm(h)}));
+  };
+
+  useEffect(()=>{
+    const url=API.replace(/^http/,'ws')+'/ws/view';
+    const ws=new WebSocket(url);
+    socket.current=ws;
+    ws.onmessage=e=>{
+      try{
+        const m=JSON.parse(e.data);
+        if(sync && typeof m.heading==='number') setHeading(norm(m.heading));
+      }catch{}
+    };
+    return()=>{ws.close();socket.current=null;};
+  },[sync]);
+
+  const handleThreeHeading=(v)=>{
+    const h=norm(v);
+    setThreeHeading(h);
+    if(sync){
+      setHeading(h);
+      publish(h);
+    }
+  };
+
+  const toggleSync=()=>{
+    setSync((enabled)=>{
+      const next=!enabled;
+      if(next){
+        setHeading(threeHeading);
+        window.setTimeout(()=>{
+          if(socket.current?.readyState===WebSocket.OPEN) socket.current.send(JSON.stringify({type:'view_state',heading:norm(threeHeading)}));
+        },0);
+      }
+      return next;
+    });
+  };
+
+  const rotateBy=(v)=>{if(threeRotateRef.current)threeRotateRef.current(v);else handleThreeHeading(threeHeading+v);};
+  const resetAll=()=>{if(threeResetRef.current)threeResetRef.current();else handleThreeHeading(180);};
+
+  return <main className="app-shell"><header className="hero"><div><h1>Foveated LiDAR Mapping</h1><p>3D model · 1D profile · 2D projection · 2.5D range map</p></div><div className="hero-meta"><b>● 3D RESET · 180° DEFAULT</b><small>0° TOP · 90° RIGHT · 180° BOTTOM · 270° LEFT</small></div></header><section className="toolbar"><span className="badge">4 SPACES</span><span className="badge">3D → 1D → 2D → 2.5D</span><span className="grow"/><button className={`sync-button ${sync?'sync-active':'sync-off'}`} type="button" onClick={toggleSync}>• SYNC {sync?'ON':'OFF'}</button><button type="button" onClick={()=>rotateBy(-5)}>↶ 5°</button><button type="button" onClick={()=>rotateBy(5)}>5° ↷</button><button type="button" onClick={resetAll}>RESET · 180°</button></section><section className="view-grid"><ThreeView onHeading={handleThreeHeading} resetRef={threeResetRef} rotateRef={threeRotateRef}/><OneDView heading={heading}/><TwoDView heading={heading}/><TwoFiveDView heading={heading}/></section><section className="analysis panel"><div><span className="section-kicker">FOV / ORIENTATION</span><strong>{Math.round(threeHeading)}°</strong><small>{sync?'linked heading':'3D heading · sync paused'}</small></div><div><span className="section-kicker">INPUT</span><strong>RAW CUBOID</strong><small>backend/data/raw/cube.json</small></div><div><span className="section-kicker">CENTROID</span><strong>BACKEND COMPUTED</strong><small>geometric center of raw vertices · Y = 0</small></div></section></main>;
 }
