@@ -70,6 +70,17 @@ function add3DRuler(scene) {
   scene.add(group);
 }
 
+function buildRawCube(raw) {
+  const vertices = raw?.vertices;
+  if (!Array.isArray(vertices) || vertices.length !== 8) return null;
+  const positions = new Float32Array(vertices.flat().map(Number));
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setIndex([0,1,2,0,2,3,4,6,5,4,7,6,0,4,5,0,5,1,3,2,6,3,6,7,1,5,6,1,6,2,0,3,7,0,7,4]);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 function ThreeView({ onHeading, resetRef, rotateRef }) {
   const mount = useRef(null); const headingCallback = useRef(onHeading); headingCallback.current = onHeading;
   useEffect(() => {
@@ -79,51 +90,43 @@ function ThreeView({ onHeading, resetRef, rotateRef }) {
     const defaultPosition = new THREE.Vector3(0, 5.5, -7.5); const defaultTarget = new THREE.Vector3(0, -.35, 0); camera.position.copy(defaultPosition);
     const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); renderer.setClearColor(0x05080a, 1); renderer.domElement.style.display = 'block'; renderer.domElement.style.width = '100%'; renderer.domElement.style.height = '100%'; renderer.domElement.style.touchAction = 'none'; root.appendChild(renderer.domElement);
     scene.add(new THREE.HemisphereLight(0xdff7ff, 0x162027, 2.2)); const key = new THREE.DirectionalLight(0xffffff, 4); key.position.set(6, 10, 8); scene.add(key); const fill = new THREE.DirectionalLight(0x73dfff, 2.5); fill.position.set(-7, 5, -5); scene.add(fill);
-    const floor = new THREE.GridHelper(18, 36, 0x31515c, 0x172a31); floor.position.y = -1.55; scene.add(floor); const axes = new THREE.AxesHelper(3.5); axes.position.set(-4, -1.54, -4); scene.add(axes);
-    const base = new THREE.Mesh(new THREE.CircleGeometry(2.8, 64), new THREE.MeshBasicMaterial({ color: 0x0c171b, transparent: true, opacity: .75, side: THREE.DoubleSide })); base.rotation.x = -Math.PI / 2; base.position.y = -1.54; scene.add(base); add3DRuler(scene);
+    const floor = new THREE.GridHelper(18, 36, 0x31515c, 0x172a31); floor.position.y = -1.55; scene.add(floor); const axes = new THREE.AxesHelper(3.5); axes.position.set(-4, -1.54, -4); scene.add(axes); const base = new THREE.Mesh(new THREE.CircleGeometry(2.8, 64), new THREE.MeshBasicMaterial({ color: 0x0c171b, transparent: true, opacity: .75, side: THREE.DoubleSide })); base.rotation.x = -Math.PI / 2; base.position.y = -1.54; scene.add(base); add3DRuler(scene);
 
-    const pointMaterial = new THREE.PointsMaterial({ color: 0xa7efff, size: .075, sizeAttenuation: true, transparent: true, opacity: .9 });
-    const centroidMaterial = new THREE.PointsMaterial({ color: 0x76ff91, size: .16, sizeAttenuation: true, transparent: true, opacity: 1 });
-    let cloud = null; let centroid = null;
-    const setPointCloud = (points, center = [0, 0, 0]) => {
-      if (cloud) { scene.remove(cloud); cloud.geometry.dispose(); }
-      const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(points.flat()), 3));
-      cloud = new THREE.Points(geometry, pointMaterial); cloud.position.set(0, -.4, 0); scene.add(cloud);
+    const solidMaterial = new THREE.MeshStandardMaterial({ color: 0x7896a0, metalness: .12, roughness: .34, transparent: true, opacity: .82, side: THREE.DoubleSide });
+    const wireMaterial = new THREE.LineBasicMaterial({ color: 0x9bf5ff, transparent: true, opacity: 1 });
+    const centroidMaterial = new THREE.MeshBasicMaterial({ color: 0x76ff91 });
+    let solid = null; let wire = null; let centroid = null;
+    const renderRaw = (raw) => {
+      const geometry = buildRawCube(raw); if (!geometry) return;
+      if (solid) { scene.remove(solid); solid.geometry.dispose(); }
+      if (wire) { scene.remove(wire); wire.geometry.dispose(); }
       if (centroid) { scene.remove(centroid); centroid.geometry.dispose(); }
-      const cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(center), 3));
-      centroid = new THREE.Points(cg, centroidMaterial); centroid.position.set(0, -.4, 0); scene.add(centroid);
+      solid = new THREE.Mesh(geometry, solidMaterial); solid.position.y = -.4; scene.add(solid);
+      wire = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), wireMaterial); wire.position.y = -.4; wire.scale.setScalar(1.002); scene.add(wire);
+      const origin = Array.isArray(raw.origin) ? raw.origin.map(Number) : [0,0,0];
+      centroid = new THREE.Mesh(new THREE.SphereGeometry(.1, 20, 20), centroidMaterial); centroid.position.set(origin[0] || 0, (origin[1] || 0) - .4, origin[2] || 0); scene.add(centroid);
     };
-    const fallback = [];
-    const size = 2.3, half = size / 2;
-    for (let face = 0; face < 6; face++) for (let i = 0; i < 24; i++) for (let j = 0; j < 24; j++) {
-      const a = -half + size * i / 23, b = -half + size * j / 23;
-      fallback.push(face === 0 ? [half, a, b] : face === 1 ? [-half, a, b] : face === 2 ? [a, half, b] : face === 3 ? [a, -half, b] : face === 4 ? [a, b, half] : [a, b, -half]);
-    }
-    setPointCloud(fallback);
+    const fallbackRaw = { origin:[0,0,0], vertices:[[-1.15,-1.15,-1.15],[1.15,-1.15,-1.15],[1.15,1.15,-1.15],[-1.15,1.15,-1.15],[-1.15,-1.15,1.15],[1.15,-1.15,1.15],[1.15,1.15,1.15],[-1.15,1.15,1.15]] };
+    renderRaw(fallbackRaw);
 
-    const controls = new OrbitControls(camera, renderer.domElement); controls.target.copy(defaultTarget); controls.enableDamping = true; controls.dampingFactor = .075; controls.enableRotate = true; controls.enablePan = true; controls.enableZoom = true; controls.rotateSpeed = .9; controls.panSpeed = 1; controls.zoomSpeed = 1; controls.minDistance = 3; controls.maxDistance = 35; controls.minPolarAngle = .12; controls.maxPolarAngle = Math.PI - .12; controls.screenSpacePanning = true;
-    controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }; controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+    const controls = new OrbitControls(camera, renderer.domElement); controls.target.copy(defaultTarget); controls.enableDamping = true; controls.dampingFactor = .075; controls.enableRotate = true; controls.enablePan = true; controls.enableZoom = true; controls.rotateSpeed = .9; controls.panSpeed = 1; controls.zoomSpeed = 1; controls.minDistance = 3; controls.maxDistance = 35; controls.minPolarAngle = .12; controls.maxPolarAngle = Math.PI - .12; controls.screenSpacePanning = true; controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }; controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
     const onContextMenu = (event) => event.preventDefault(); renderer.domElement.addEventListener('contextmenu', onContextMenu);
     const resize = () => { const w = Math.max(1, root.clientWidth), h = Math.max(1, root.clientHeight); renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }; const ro = new ResizeObserver(resize); ro.observe(root); resize();
     const changed = () => { const offset = camera.position.clone().sub(controls.target); const horizontal = Math.hypot(offset.x, offset.z); if (horizontal > .0001) headingCallback.current(norm(Math.atan2(offset.x, offset.z) * 180 / Math.PI)); };
     controls.addEventListener('change', changed); controls.update(); controls.saveState(); changed();
     const reset3D = () => { controls.reset(); controls.update(); changed(); };
-    const rotate3D = (amount) => {
-      const offset = camera.position.clone().sub(controls.target); const angle = degToRad(amount);
-      const x = offset.x * Math.cos(angle) + offset.z * Math.sin(angle); const z = -offset.x * Math.sin(angle) + offset.z * Math.cos(angle);
-      camera.position.set(controls.target.x + x, camera.position.y, controls.target.z + z); controls.update(); changed();
-    };
+    const rotate3D = (amount) => { const offset = camera.position.clone().sub(controls.target); const angle = degToRad(amount); const x = offset.x * Math.cos(angle) + offset.z * Math.sin(angle); const z = -offset.x * Math.sin(angle) + offset.z * Math.cos(angle); camera.position.set(controls.target.x + x, camera.position.y, controls.target.z + z); controls.update(); changed(); };
     if (resetRef) resetRef.current = reset3D; if (rotateRef) rotateRef.current = rotate3D;
     let af = 0; const loop = () => { if (dead) return; controls.update(); renderer.render(scene, camera); af = requestAnimationFrame(loop); }; loop();
-    fetch(`${API}/api/frame`).then(r => r.ok ? r.json() : null).then(d => { if (dead || !d?.points?.length) return; setPointCloud(d.points, d.centroid || [0, 0, 0]); }).catch(() => {});
-    return () => { dead = true; cancelAnimationFrame(af); ro.disconnect(); controls.removeEventListener('change', changed); renderer.domElement.removeEventListener('contextmenu', onContextMenu); controls.dispose(); if (cloud) cloud.geometry.dispose(); if (centroid) centroid.geometry.dispose(); pointMaterial.dispose(); centroidMaterial.dispose(); base.geometry.dispose(); base.material.dispose(); renderer.dispose(); if (resetRef && resetRef.current === reset3D) resetRef.current = null; if (rotateRef && rotateRef.current === rotate3D) rotateRef.current = null; root.innerHTML = ''; };
+    fetch(`${API}/api/frame`).then(r => r.ok ? r.json() : null).then(d => { if (dead || !d?.input) return; renderRaw(d.input); }).catch(() => {});
+    return () => { dead = true; cancelAnimationFrame(af); ro.disconnect(); controls.removeEventListener('change', changed); renderer.domElement.removeEventListener('contextmenu', onContextMenu); controls.dispose(); if (solid) solid.geometry.dispose(); if (wire) wire.geometry.dispose(); if (centroid) centroid.geometry.dispose(); solidMaterial.dispose(); wireMaterial.dispose(); centroidMaterial.dispose(); base.geometry.dispose(); base.material.dispose(); renderer.dispose(); if (resetRef && resetRef.current === reset3D) resetRef.current = null; if (rotateRef && rotateRef.current === rotate3D) rotateRef.current = null; root.innerHTML = ''; };
   }, []);
-  return <article className="view-card three-card"><div className="card-head"><span>3D</span><small>LiDAR point-cloud viewer · orbit · pan · zoom</small></div><div className="three-stage" ref={mount}/><div className="three-tools"><span>LEFT DRAG · ORBIT</span><span>RIGHT DRAG · PAN</span><span>MIDDLE / WHEEL · ZOOM</span><button type="button" onClick={() => resetRef.current?.()}>RESET · 180°</button></div></article>;
+  return <article className="view-card three-card"><div className="card-head"><span>3D</span><small>Solid wireframe cuboid · raw input · orbit · pan · zoom</small></div><div className="three-stage" ref={mount}/><div className="three-tools"><span>LEFT DRAG · ORBIT</span><span>RIGHT DRAG · PAN</span><span>MIDDLE / WHEEL · ZOOM</span><button type="button" onClick={() => resetRef.current?.()}>RESET · 180°</button></div></article>;
 }
 
 export default function ViewerV2() {
   const [heading, setHeading] = useState(180); const [sync, setSync] = useState(true); const socket = useRef(null); const threeResetRef = useRef(null); const threeRotateRef = useRef(null);
-  const publish = (nextHeading = heading) => { if (!sync || socket.current?.readyState !== WebSocket.OPEN) return; socket.current.send(JSON.stringify({ type: 'view_state', heading: norm(nextHeading) })); };
+  const publish = (nextHeading = heading) => { if (!sync || socket.current?.readyState !== WebSocket.OPEN) return; socket.current.send(JSON.stringify({ type:'view_state', heading:norm(nextHeading) })); };
   useEffect(() => { const wsUrl = API.replace(/^http/, 'ws') + '/ws/view'; const ws = new WebSocket(wsUrl); socket.current = ws; ws.onmessage = (event) => { try { const m = JSON.parse(event.data); if (typeof m.heading === 'number') setHeading(norm(m.heading)); } catch {} }; return () => { ws.close(); socket.current = null; }; }, []);
   const handleHeading = (value) => { const h = norm(value); setHeading(h); if (sync) publish(h); };
   const rotateBy = (amount) => { if (threeRotateRef.current) threeRotateRef.current(amount); else handleHeading(heading + amount); };
@@ -132,6 +135,6 @@ export default function ViewerV2() {
     <header className="hero"><div><h1>Foveated LiDAR Mapping</h1><p>3D model · 1D profile · 2D projection · 2.5D range map</p></div><div className="hero-meta"><b>● 3D RESET · 180° DEFAULT</b><small>0° TOP · 90° RIGHT · 180° BOTTOM · 270° LEFT</small></div></header>
     <section className="toolbar"><span className="badge">4 SPACES</span><span className="badge">3D → 1D → 2D → 2.5D</span><span className="grow"/><button className="sync-button" type="button" onClick={() => setSync(v => !v)}>• SYNC {sync ? 'ON' : 'OFF'}</button><button type="button" onClick={() => rotateBy(-5)}>↶ 5°</button><button type="button" onClick={() => rotateBy(5)}>5° ↷</button><button type="button" onClick={resetAll}>RESET · 180°</button></section>
     <section className="view-grid"><ThreeView onHeading={handleHeading} resetRef={threeResetRef} rotateRef={threeRotateRef}/><OneDView heading={heading}/><TwoDView heading={heading}/><TwoFiveDView heading={heading}/></section>
-    <section className="analysis panel"><div><span className="section-kicker">FOV / ORIENTATION</span><strong>{Math.round(heading)}°</strong><small>linked heading</small></div><div><span className="section-kicker">INPUT</span><strong>RAW CUBE POINTS</strong><small>backend/data/raw/cube.json</small></div><div><span className="section-kicker">RULER</span><strong>CLOCKWISE 0° → 360°</strong><small>0° top · 90° right · 180° bottom · 270° left</small></div></section>
+    <section className="analysis panel"><div><span className="section-kicker">FOV / ORIENTATION</span><strong>{Math.round(heading)}°</strong><small>linked heading</small></div><div><span className="section-kicker">INPUT</span><strong>RAW CUBE</strong><small>backend/data/raw/cube.json</small></div><div><span className="section-kicker">RULER</span><strong>CLOCKWISE 0° → 360°</strong><small>0° top · 90° right · 180° bottom · 270° left</small></div></section>
   </main>;
 }
