@@ -4,7 +4,7 @@ from .processing.lidar import build_demo_frame
 
 app = FastAPI(title="Foveated LiDAR Mapping Backend", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
-state = {"heading": 32.0, "pitch": -28.0, "zoom": 1.0, "pan_x": 0.0, "pan_y": 0.0}
+state = {"heading": 180.0, "pitch": -28.0, "zoom": 1.0, "pan_x": 0.0, "pan_y": 0.0}
 clients: set[WebSocket] = set()
 
 @app.get("/api/health")
