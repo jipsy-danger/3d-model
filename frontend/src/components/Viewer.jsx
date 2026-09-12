@@ -86,6 +86,8 @@ function add3DRuler(scene) {
   const circleGeometry = new THREE.BufferGeometry().setFromPoints(circlePoints);
   rulerGroup.add(new THREE.Line(circleGeometry, new THREE.LineBasicMaterial({ color: 0x477b88, transparent: true, opacity: 0.72 })));
 
+  // Clockwise azimuth convention when viewed from above:
+  // 0° = top/front, 90° = right, 180° = bottom/back, 270° = left, 360° = top/front.
   for (let degree = 0; degree <= 360; degree += 10) {
     const angle = (degree * Math.PI) / 180;
     const major = degree % 30 === 0;
@@ -121,8 +123,8 @@ export default function Viewer() {
   const mount = useRef(null);
   const three = useRef(null);
   const wsRef = useRef(null);
-  const state = useRef({ heading: 32, pitch: -28, zoom: 1, panX: 0, panY: 0, sync: true });
-  const [heading, setHeading] = useState(32);
+  const state = useRef({ heading: 0, pitch: 35, zoom: 1, panX: 0, panY: 0, sync: true, applyingRemote: false });
+  const [heading, setHeading] = useState(0);
   const [status, setStatus] = useState('3D READY');
 
   const publish = () => {
@@ -141,7 +143,7 @@ export default function Viewer() {
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0x05080a);
       const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 200);
-      camera.position.set(7.5, 5.5, 7.5);
+      camera.position.set(0, 5.5, 7.5);
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.setClearColor(0x05080a, 1);
@@ -181,11 +183,12 @@ export default function Viewer() {
       baseEdge.position.y = -1.52;
       scene.add(baseEdge);
 
-      // 360° azimuth ruler physically surrounds the 3D space.
       add3DRuler(scene);
 
       const controls = new OrbitControls(camera, renderer.domElement);
-      controls.target.set(0, -0.35, 0);
+      const defaultTarget = new THREE.Vector3(0, -0.35, 0);
+      const defaultPosition = new THREE.Vector3(0, 5.5, 7.5);
+      controls.target.copy(defaultTarget);
       controls.enableDamping = true;
       controls.dampingFactor = 0.075;
       controls.enableRotate = true;
@@ -198,8 +201,8 @@ export default function Viewer() {
       controls.maxDistance = 35;
       controls.screenSpacePanning = true;
       renderer.domElement.addEventListener('contextmenu', (event) => event.preventDefault());
-      three.current = { camera, controls };
-      setStatus('3D READY · CUBOID · 360°');
+      three.current = { camera, controls, defaultPosition, defaultTarget };
+      setStatus('3D READY · CUBOID · 360° CW');
 
       const resize = () => {
         const width = Math.max(1, root.clientWidth);
@@ -219,7 +222,12 @@ export default function Viewer() {
         state.current.zoom = Math.max(0.55, Math.min(1.8, 6.7 / offset.length()));
         state.current.panX = controls.target.x;
         state.current.panY = controls.target.z;
-        if (state.current.sync) publish();
+        setHeading(Math.round(state.current.heading));
+        if (state.current.applyingRemote) {
+          state.current.applyingRemote = false;
+        } else if (state.current.sync) {
+          publish();
+        }
       });
 
       let animationFrame = 0;
@@ -259,7 +267,7 @@ export default function Viewer() {
         const pointMaterial = new THREE.PointsMaterial({ color: 0xa7efff, size: 0.065, sizeAttenuation: true, transparent: true, opacity: 0.8 });
         scene.add(new THREE.Points(pointGeometry, pointMaterial));
         setStatus(`BACKEND · ${data.point_count ?? data.points.length} PTS`);
-      }).catch(() => setStatus('3D READY · LOCAL CUBOID · 360°'));
+      }).catch(() => setStatus('3D READY · LOCAL CUBOID · 360° CW'));
     } catch (error) {
       console.error(error);
       setStatus('3D RENDER ERROR');
@@ -277,9 +285,19 @@ export default function Viewer() {
       socket.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
-          if (message.type === 'view_state' && state.current.sync) {
-            setHeading(Math.round(norm(message.heading ?? state.current.heading)));
-          }
+          if (message.type !== 'view_state' || !state.current.sync) return;
+          const nextHeading = norm(message.heading ?? state.current.heading);
+          state.current.heading = nextHeading;
+          setHeading(Math.round(nextHeading));
+          const viewer = three.current;
+          if (!viewer) return;
+          const offset = viewer.camera.position.clone().sub(viewer.controls.target);
+          const radius = Math.max(0.001, Math.hypot(offset.x, offset.z));
+          const angle = (nextHeading * Math.PI) / 180;
+          state.current.applyingRemote = true;
+          viewer.camera.position.x = viewer.controls.target.x + Math.sin(angle) * radius;
+          viewer.camera.position.z = viewer.controls.target.z + Math.cos(angle) * radius;
+          viewer.controls.update();
         } catch {}
       };
     } catch {}
@@ -287,8 +305,37 @@ export default function Viewer() {
   }, []);
 
   const rotateBy = (amount) => {
-    state.current.heading = norm(state.current.heading + amount);
-    setHeading(Math.round(state.current.heading));
+    const viewer = three.current;
+    if (viewer) {
+      const offset = viewer.camera.position.clone().sub(viewer.controls.target);
+      const angle = (amount * Math.PI) / 180;
+      const x = offset.x * Math.cos(angle) + offset.z * Math.sin(angle);
+      const z = -offset.x * Math.sin(angle) + offset.z * Math.cos(angle);
+      state.current.applyingRemote = false;
+      viewer.camera.position.x = viewer.controls.target.x + x;
+      viewer.camera.position.z = viewer.controls.target.z + z;
+      viewer.controls.update();
+    } else {
+      state.current.heading = norm(state.current.heading + amount);
+      setHeading(Math.round(state.current.heading));
+      if (state.current.sync) publish();
+    }
+  };
+
+  const reset3D = () => {
+    const viewer = three.current;
+    if (!viewer) return;
+    state.current.applyingRemote = false;
+    viewer.camera.position.copy(viewer.defaultPosition);
+    viewer.controls.target.copy(viewer.defaultTarget);
+    viewer.controls.update();
+    state.current.heading = 0;
+    state.current.pitch = 35;
+    state.current.zoom = 1;
+    state.current.panX = 0;
+    state.current.panY = 0;
+    setHeading(0);
+    setStatus('3D RESET · 0° · CLOCKWISE');
     if (state.current.sync) publish();
   };
 
@@ -304,11 +351,16 @@ export default function Viewer() {
         <button className="btn" onClick={() => rotateBy(-5)}>↶ 5°</button><button className="btn" onClick={() => rotateBy(5)}>5° ↷</button>
       </section>
       <section className="views">
-        <article className="view-card"><div className="card-head"><span>3D</span><small>Interactive 3D space · orbit · pan · zoom</small></div><div className="three-stage" ref={mount} /><div className="corner axis"><i>X</i> <i>Y</i> <i>Z</i></div><div className="card-footer">Left drag · orbit &nbsp;&nbsp; Right drag · pan &nbsp;&nbsp; Wheel · zoom</div></article>
+        <article className="view-card">
+          <div className="card-head"><span>3D</span><small>Interactive 3D space · orbit · pan · zoom</small><button className="view-reset" type="button" onClick={reset3D} title="Reset 3D view">↺ RESET</button></div>
+          <div className="three-stage" ref={mount} />
+          <div className="corner axis"><i>X</i> <i>Y</i> <i>Z</i></div>
+          <div className="card-footer">Left drag · orbit &nbsp;&nbsp; Right drag · pan &nbsp;&nbsp; Wheel · zoom &nbsp;&nbsp; ↺ reset</div>
+        </article>
         <PolarView heading={heading} />
         <GridView heading={heading} />
       </section>
-      <section className="analysis panel"><div><span className="section-kicker">FOV / ORIENTATION</span><strong>{heading}°</strong><small>linked heading</small></div><div><span className="section-kicker">INPUT</span><strong>3D CUBOID</strong><small>primary visualization input</small></div><div><span className="section-kicker">PIPELINE</span><strong>3D → 2D → 2.5D → FRNet</strong><small>processing boundary is backend</small></div></section>
+      <section className="analysis panel"><div><span className="section-kicker">FOV / ORIENTATION</span><strong>{heading}°</strong><small>linked heading</small></div><div><span className="section-kicker">INPUT</span><strong>3D CUBOID</strong><small>local fallback / backend frame</small></div><div><span className="section-kicker">RULER</span><strong>CLOCKWISE 0° → 360°</strong><small>0° top · 90° right · 180° bottom · 270° left</small></div></section>
     </main>
   );
 }
