@@ -13,17 +13,17 @@ function OneDView({ heading }) {
   const [axis, setAxis] = useState('x');
   const [viewport, setViewport] = useState({ pan: 0, zoom: 1 });
   const drag = useRef(null);
-  const points = Array.from({ length: 45 }, (_, i) => ({ x: 5 + i * 2.05, y: 50 - Math.abs(Math.sin(i * 0.7)) * 7 - (i % 9 === 0 ? (i % 17) * 1.2 : 0) }));
+  const points = Array.from({ length: 45 }, (_, i) => 5 + i * 2.05);
   const zoom = viewport.zoom;
-  const xToScreen = (value) => 50 + (value - 50 + viewport.pan) * zoom;
+  const axisToScreen = (value) => 50 + (value - 50 + viewport.pan) * zoom;
   const onPointerDown = (event) => {
     event.currentTarget.setPointerCapture(event.pointerId);
-    drag.current = { x: event.clientX, pan: viewport.pan };
+    drag.current = { x: event.clientX, y: event.clientY, pan: viewport.pan };
   };
   const onPointerMove = (event) => {
     if (!drag.current) return;
-    const width = Math.max(1, event.currentTarget.clientWidth);
-    const delta = (event.clientX - drag.current.x) / width * 100;
+    const size = Math.max(1, axis === 'x' ? event.currentTarget.clientWidth : event.currentTarget.clientHeight);
+    const delta = (axis === 'x' ? event.clientX - drag.current.x : drag.current.y - event.clientY) / size * 100;
     setViewport((v) => ({ ...v, pan: drag.current.pan + delta / Math.max(v.zoom, .01) }));
   };
   const stopDrag = () => { drag.current = null; };
@@ -36,18 +36,19 @@ function OneDView({ heading }) {
     setAxis(nextAxis);
     setViewport({ pan: 0, zoom: 1 });
   };
-  const axisValue = (point, index) => axis === 'x' ? point.x : (5 + index * 2.05);
+  const tickValues = Array.from({ length: 11 }, (_, i) => i * 10);
+  const position = (value) => axisToScreen(value);
   return <article className="view-card one-d-card">
-    <div className="card-head"><span>1D</span><small>3D → 1D projection · axis selectable · pan X · zoom X · synced</small><span className="angle-readout">{String(Math.round(heading)).padStart(3, '0')}°</span></div>
-    <div className="one-d-space one-d-interactive" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={stopDrag} onPointerCancel={stopDrag} onWheel={onWheel}>
-      <div className="one-d-plot-grid" style={{ transform: `translateX(${viewport.pan * zoom}%) scaleX(${zoom})`, transformOrigin: '50% 50%' }}/>
-      <div className="one-d-axis"/><div className="one-d-zero"/>
-      {mode === 'points' && points.map((p, i) => <i key={i} className="one-d-cloud-dot" style={{ left: `${xToScreen(axisValue(p, i))}%`, top: `${p.y}%` }}/>) }
-      {mode === 'line' && <div className="one-d-line-profile" style={{ transform: `translateX(${viewport.pan * zoom}%) scaleX(${zoom})`, transformOrigin: '50% 50%' }}/>} 
-      <span className="one-d-label x-label">{axis.toUpperCase()} (meters)</span>
-      <span className="one-d-label y1-label">Intensity / Height</span>
-      <span className="one-d-viewport-hint">DRAG · PAN {axis.toUpperCase()} &nbsp; WHEEL · ZOOM {axis.toUpperCase()}</span>
+    <div className="card-head"><span>1D</span><small>3D → 1D spatial projection · axis selectable · pan · zoom · synced</small><span className="angle-readout">{String(Math.round(heading)).padStart(3, '0')}°</span></div>
+    <div className={`one-d-space one-d-interactive axis-${axis}`} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={stopDrag} onPointerCancel={stopDrag} onWheel={onWheel}>
+      <div className="one-d-space-grid"/>
+      <div className="one-d-axis-line"/>
+      <div className="one-d-ticks">{tickValues.map((v) => <span key={v} style={axis === 'x' ? { left: `${position(v)}%` } : { top: `${100 - position(v)}%` }}>{v}</span>)}</div>
+      {mode === 'points' && points.map((value, i) => <i key={i} className="one-d-cloud-dot" style={axis === 'x' ? { left: `${position(value)}%`, top: '50%' } : { left: '50%', top: `${100 - position(value)}%` }}/>) }
+      {mode === 'line' && <div className="one-d-line-profile" style={axis === 'x' ? { left: `${position(5)}%`, width: `${(position(90) - position(5))}%`, top: '50%' } : { top: `${100 - position(90)}%`, height: `${(position(90) - position(5))}%`, left: '50%' }}/>} 
+      <span className="one-d-space-axis-label">{axis.toUpperCase()} AXIS · METERS</span>
       <span className="one-d-sync-indicator">● 3D SYNC · {Math.round(heading)}°</span>
+      <span className="one-d-viewport-hint">DRAG · PAN {axis.toUpperCase()} &nbsp; WHEEL · ZOOM {axis.toUpperCase()}</span>
     </div>
     <div className="one-d-controls">
       <button className={mode === 'points' ? 'selected' : ''} onClick={() => setMode('points')}>✦ POINTS</button>
@@ -117,7 +118,6 @@ function ThreeView({ onHeading, resetRef, rotateRef }) {
     const floor = new THREE.GridHelper(18, 36, 0x31515c, 0x172a31); floor.position.y = floorY; scene.add(floor);
     const axes = new THREE.AxesHelper(3.5); axes.position.set(-4, floorY, -4); scene.add(axes);
     const base = new THREE.Mesh(new THREE.CircleGeometry(2.8, 64), new THREE.MeshBasicMaterial({ color: 0x0c171b, transparent: true, opacity: .75, side: THREE.DoubleSide })); base.rotation.x = -Math.PI / 2; base.position.y = floorY + .002; scene.add(base); add3DRuler(scene, floorY);
-
     const solidMaterial = new THREE.MeshBasicMaterial({ color: 0x788f98, side: THREE.DoubleSide, transparent: false, opacity: 1 });
     const wireMaterial = new THREE.LineBasicMaterial({ color: 0x9bf5ff, transparent: true, opacity: 1 });
     const centroidMaterial = new THREE.MeshBasicMaterial({ color: 0x76ff91, depthTest: false, depthWrite: false });
@@ -132,15 +132,10 @@ function ThreeView({ onHeading, resetRef, rotateRef }) {
       solid = new THREE.Mesh(geometry, solidMaterial); solid.position.set(0, 0, 0); scene.add(solid);
       wire = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), wireMaterial); wire.position.set(0, 0, 0); wire.scale.setScalar(1.001); scene.add(wire);
       const point = Array.isArray(centroidPoint) ? centroidPoint.map(Number) : [0,0,0];
-      xAxis = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(-100, point[1] || 0, point[2] || 0),
-        new THREE.Vector3(100, point[1] || 0, point[2] || 0),
-      ]), xAxisMaterial);
-      xAxis.renderOrder = 999;
-      scene.add(xAxis);
+      xAxis = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-100, point[1] || 0, point[2] || 0), new THREE.Vector3(100, point[1] || 0, point[2] || 0)]), xAxisMaterial);
+      xAxis.renderOrder = 999; scene.add(xAxis);
       centroid = new THREE.Mesh(new THREE.SphereGeometry(.17, 24, 24), centroidMaterial); centroid.position.set(point[0] || 0, point[1] || 0, point[2] || 0); centroid.renderOrder = 1000; scene.add(centroid);
     };
-
     const controls = new OrbitControls(camera, renderer.domElement); controls.target.copy(defaultTarget); controls.enableDamping = true; controls.dampingFactor = .075; controls.enableRotate = true; controls.enablePan = true; controls.enableZoom = true; controls.rotateSpeed = .9; controls.panSpeed = 1; controls.zoomSpeed = 1; controls.minDistance = 3; controls.maxDistance = 35; controls.minPolarAngle = .12; controls.maxPolarAngle = Math.PI - .12; controls.screenSpacePanning = true; controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }; controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
     const onContextMenu = (event) => event.preventDefault(); renderer.domElement.addEventListener('contextmenu', onContextMenu);
     const resize = () => { const w = Math.max(1, root.clientWidth), h = Math.max(1, root.clientHeight); renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }; const ro = new ResizeObserver(resize); ro.observe(root); resize();
