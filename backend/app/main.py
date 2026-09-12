@@ -19,18 +19,38 @@ def frame():
 def get_state():
     return state
 
-@app.websocket("/ws/state")
-async def ws_state(ws: WebSocket):
-    await ws.accept(); clients.add(ws)
+async def handle_view_socket(ws: WebSocket):
+    await ws.accept()
+    clients.add(ws)
     try:
-        await ws.send_json({"type": "state", "state": state})
+        await ws.send_json({"type": "view_state", "heading": state["heading"]})
         while True:
             msg = await ws.receive_json()
-            if msg.get("type") == "view_state":
-                state.update({k: float(msg[k]) for k in state if k in msg})
-                packet = {"type": "state", "state": state}
-                for client in list(clients):
-                    try: await client.send_json(packet)
-                    except Exception: clients.discard(client)
+            if msg.get("type") != "view_state":
+                continue
+            if "heading" in msg:
+                state["heading"] = float(msg["heading"]) % 360.0
+            if "pitch" in msg:
+                state["pitch"] = float(msg["pitch"])
+            if "zoom" in msg:
+                state["zoom"] = float(msg["zoom"])
+            if "pan_x" in msg:
+                state["pan_x"] = float(msg["pan_x"])
+            if "pan_y" in msg:
+                state["pan_y"] = float(msg["pan_y"])
+            packet = {"type": "view_state", "heading": state["heading"]}
+            for client in list(clients):
+                try:
+                    await client.send_json(packet)
+                except Exception:
+                    clients.discard(client)
     except WebSocketDisconnect:
         clients.discard(ws)
+
+@app.websocket("/ws/view")
+async def ws_view(ws: WebSocket):
+    await handle_view_socket(ws)
+
+@app.websocket("/ws/state")
+async def ws_state(ws: WebSocket):
+    await handle_view_socket(ws)
