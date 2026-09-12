@@ -81,21 +81,23 @@ function add3DRuler(scene) {
   const circlePoints = [];
   for (let i = 0; i <= 128; i += 1) {
     const angle = (i / 128) * Math.PI * 2;
-    circlePoints.push(new THREE.Vector3(Math.sin(angle) * radius, -1.485, Math.cos(angle) * radius));
+    circlePoints.push(new THREE.Vector3(-Math.sin(angle) * radius, -1.485, Math.cos(angle) * radius));
   }
   const circleGeometry = new THREE.BufferGeometry().setFromPoints(circlePoints);
   rulerGroup.add(new THREE.Line(circleGeometry, new THREE.LineBasicMaterial({ color: 0x477b88, transparent: true, opacity: 0.72 })));
 
-  // Top-view azimuth convention: 0° top/front, 90° right, 180° bottom/back, 270° left.
-  // World-space coordinates stay fixed; the default camera is positioned at -Z so +Z renders at the top of the screen.
+  // Required 3D azimuth convention when viewed from above:
+  // 0° = top/front, 90° = right, 180° = bottom/back, 270° = left, 360° = top/front.
+  // Increasing degrees therefore move clockwise around the ruler.
+  // The negative X term is intentional: it maps 90° to screen-right and 270° to screen-left.
   for (let degree = 0; degree <= 360; degree += 10) {
     const angle = (degree * Math.PI) / 180;
     const major = degree % 30 === 0;
     const outer = radius + 0.13;
     const inner = radius - (major ? 0.26 : 0.15);
     const points = [
-      new THREE.Vector3(Math.sin(angle) * inner, -1.48, Math.cos(angle) * inner),
-      new THREE.Vector3(Math.sin(angle) * outer, -1.48, Math.cos(angle) * outer),
+      new THREE.Vector3(-Math.sin(angle) * inner, -1.48, Math.cos(angle) * inner),
+      new THREE.Vector3(-Math.sin(angle) * outer, -1.48, Math.cos(angle) * outer),
     ];
     const geometry = new THREE.BufferGeometry().setFromPoints(points);
     rulerGroup.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({
@@ -107,9 +109,9 @@ function add3DRuler(scene) {
     if (major) {
       const label = makeDegreeSprite(`${degree}°`);
       const labelRadius = radius + 0.58;
-      label.position.set(Math.sin(angle) * labelRadius, -1.43, Math.cos(angle) * labelRadius);
+      label.position.set(-Math.sin(angle) * labelRadius, -1.43, Math.cos(angle) * labelRadius);
       if (degree === 360) {
-        label.position.x += 0.30;
+        label.position.x -= 0.30;
         label.position.z += 0.30;
       }
       rulerGroup.add(label);
@@ -143,8 +145,8 @@ export default function Viewer() {
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0x05080a);
       const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 200);
-      // -Z places the +Z / 0° direction at the top of the rendered 3D ruler.
-      camera.position.set(0, 5.5, -7.5);
+      // Default camera is on +Z so the front/top of the 3D ruler is 0°.
+      camera.position.set(0, 5.5, 7.5);
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.setClearColor(0x05080a, 1);
@@ -188,7 +190,7 @@ export default function Viewer() {
 
       const controls = new OrbitControls(camera, renderer.domElement);
       const defaultTarget = new THREE.Vector3(0, -0.35, 0);
-      const defaultPosition = new THREE.Vector3(0, 5.5, -7.5);
+      const defaultPosition = new THREE.Vector3(0, 5.5, 7.5);
       controls.target.copy(defaultTarget);
       controls.enableDamping = true;
       controls.dampingFactor = 0.075;
@@ -218,8 +220,7 @@ export default function Viewer() {
 
       controls.addEventListener('change', () => {
         const offset = camera.position.clone().sub(controls.target);
-        // Camera azimuth is measured from -Z so the displayed heading is 0° at the default view.
-        state.current.heading = norm((Math.atan2(offset.x, offset.z) * 180) / Math.PI - 180);
+        state.current.heading = norm((Math.atan2(offset.x, offset.z) * 180) / Math.PI);
         state.current.pitch = (Math.asin(Math.max(-1, Math.min(1, offset.y / offset.length()))) * 180) / Math.PI;
         state.current.zoom = Math.max(0.55, Math.min(1.8, 6.7 / offset.length()));
         state.current.panX = controls.target.x;
@@ -295,8 +296,7 @@ export default function Viewer() {
           if (!viewer) return;
           const offset = viewer.camera.position.clone().sub(viewer.controls.target);
           const radius = Math.max(0.001, Math.hypot(offset.x, offset.z));
-          // Heading 0° is the -Z camera position; add 180° to map heading to world-space camera azimuth.
-          const angle = ((nextHeading + 180) * Math.PI) / 180;
+          const angle = (nextHeading * Math.PI) / 180;
           state.current.applyingRemote = true;
           viewer.camera.position.x = viewer.controls.target.x + Math.sin(angle) * radius;
           viewer.camera.position.z = viewer.controls.target.z + Math.cos(angle) * radius;
@@ -312,9 +312,8 @@ export default function Viewer() {
     if (viewer) {
       const offset = viewer.camera.position.clone().sub(viewer.controls.target);
       const angle = (amount * Math.PI) / 180;
-      // Positive amount increases displayed heading clockwise: rotate the camera's world azimuth by +amount.
-      const x = offset.x * Math.cos(angle) - offset.z * Math.sin(angle);
-      const z = offset.x * Math.sin(angle) + offset.z * Math.cos(angle);
+      const x = offset.x * Math.cos(angle) + offset.z * Math.sin(angle);
+      const z = -offset.x * Math.sin(angle) + offset.z * Math.cos(angle);
       state.current.applyingRemote = false;
       viewer.camera.position.x = viewer.controls.target.x + x;
       viewer.camera.position.z = viewer.controls.target.z + z;
