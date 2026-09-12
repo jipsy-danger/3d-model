@@ -43,9 +43,9 @@ function GridView({ heading }) {
         </div>
         <div className="ruler">
           {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330, 360].map((degree) => (
-            <span key={degree} style={{ transform: `rotate(${degree}deg) translateY(-102px)` }}>{degree}°</span>
+            <span key={degree} style={{ '--pos': `${(degree / 360) * 100}` }}>{degree}°</span>
           ))}
-          <div className="ruler-pointer" style={{ transform: `rotate(${heading}deg)` }} />
+          <div className="ruler-pointer" style={{ '--pointer': `${(heading / 360) * 100}%` }} />
         </div>
       </div>
       <div className="card-footer">Pan · Rotate · Measure 360°</div>
@@ -70,18 +70,14 @@ export default function Viewer() {
   useEffect(() => {
     let disposed = false;
     let cleanup = () => {};
-
-    // Build the 3D space immediately. The visualization must not wait for the backend.
     const root = mount.current;
     if (!root) return undefined;
 
     try {
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0x05080a);
-
       const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 200);
       camera.position.set(7.5, 5.5, 7.5);
-
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.setClearColor(0x05080a, 1);
@@ -95,7 +91,6 @@ export default function Viewer() {
       fill.position.set(-7, 5, -5);
       scene.add(fill);
 
-      // Large spatial floor and origin axes make the panel visibly 3D.
       const floor = new THREE.GridHelper(18, 36, 0x31515c, 0x172a31);
       floor.position.y = -1.55;
       scene.add(floor);
@@ -103,43 +98,22 @@ export default function Viewer() {
       axes.position.set(-4, -1.54, -4);
       scene.add(axes);
 
-      // Primary input: a clearly visible cuboid in the 3D coordinate space.
       const size = 2.3;
       const cubeGeometry = new THREE.BoxGeometry(size, size, size);
-      const cubeMaterial = new THREE.MeshStandardMaterial({
-        color: 0x7896a0,
-        metalness: 0.15,
-        roughness: 0.35,
-        emissive: 0x13272e,
-        emissiveIntensity: 0.7,
-      });
+      const cubeMaterial = new THREE.MeshStandardMaterial({ color: 0x7896a0, metalness: 0.15, roughness: 0.35, emissive: 0x13272e, emissiveIntensity: 0.7 });
       const cuboid = new THREE.Mesh(cubeGeometry, cubeMaterial);
       cuboid.position.set(0, -0.4, 0);
       scene.add(cuboid);
-
       const edgeGeometry = new THREE.EdgesGeometry(cubeGeometry);
       const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x9bf5ff });
-      const edges = new THREE.LineSegments(edgeGeometry, edgeMaterial);
-      cuboid.add(edges);
+      cuboid.add(new THREE.LineSegments(edgeGeometry, edgeMaterial));
+      cuboid.add(new THREE.Mesh(new THREE.SphereGeometry(0.1, 20, 20), new THREE.MeshBasicMaterial({ color: 0x76ff91 })));
 
-      const center = new THREE.Mesh(
-        new THREE.SphereGeometry(0.1, 20, 20),
-        new THREE.MeshBasicMaterial({ color: 0x76ff91 })
-      );
-      cuboid.add(center);
-
-      // Ground shadow/reference rings around the input object.
-      const base = new THREE.Mesh(
-        new THREE.CircleGeometry(2.8, 64),
-        new THREE.MeshBasicMaterial({ color: 0x0c171b, transparent: true, opacity: 0.75, side: THREE.DoubleSide })
-      );
+      const base = new THREE.Mesh(new THREE.CircleGeometry(2.8, 64), new THREE.MeshBasicMaterial({ color: 0x0c171b, transparent: true, opacity: 0.75, side: THREE.DoubleSide }));
       base.rotation.x = -Math.PI / 2;
       base.position.y = -1.54;
       scene.add(base);
-      const baseEdge = new THREE.LineSegments(
-        new THREE.EdgesGeometry(new THREE.CylinderGeometry(2.8, 2.8, 0.02, 64)),
-        new THREE.LineBasicMaterial({ color: 0x2c707e })
-      );
+      const baseEdge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.CylinderGeometry(2.8, 2.8, 0.02, 64)), new THREE.LineBasicMaterial({ color: 0x2c707e }));
       baseEdge.position.y = -1.52;
       scene.add(baseEdge);
 
@@ -203,22 +177,15 @@ export default function Viewer() {
         three.current = null;
       };
 
-      // Backend data is optional for this first 3D step. If it is available, add its points.
-      fetch(`${API}/api/frame`)
-        .then((response) => (response.ok ? response.json() : Promise.reject(new Error('backend unavailable'))))
-        .then((data) => {
-          if (disposed || !Array.isArray(data?.points) || !data.points.length) return;
-          const positions = new Float32Array(data.points.flat());
-          const pointGeometry = new THREE.BufferGeometry();
-          pointGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-          const pointMaterial = new THREE.PointsMaterial({ color: 0xa7efff, size: 0.065, sizeAttenuation: true, transparent: true, opacity: 0.8 });
-          scene.add(new THREE.Points(pointGeometry, pointMaterial));
-          setStatus(`BACKEND · ${data.point_count ?? data.points.length} PTS`);
-        })
-        .catch(() => {
-          // Keep the 3D cuboid visible even when FastAPI is not running.
-          setStatus('3D READY · LOCAL CUBOID');
-        });
+      fetch(`${API}/api/frame`).then((response) => (response.ok ? response.json() : Promise.reject(new Error('backend unavailable')))).then((data) => {
+        if (disposed || !Array.isArray(data?.points) || !data.points.length) return;
+        const positions = new Float32Array(data.points.flat());
+        const pointGeometry = new THREE.BufferGeometry();
+        pointGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        const pointMaterial = new THREE.PointsMaterial({ color: 0xa7efff, size: 0.065, sizeAttenuation: true, transparent: true, opacity: 0.8 });
+        scene.add(new THREE.Points(pointGeometry, pointMaterial));
+        setStatus(`BACKEND · ${data.point_count ?? data.points.length} PTS`);
+      }).catch(() => setStatus('3D READY · LOCAL CUBOID'));
     } catch (error) {
       console.error(error);
       setStatus('3D RENDER ERROR');
@@ -267,30 +234,14 @@ export default function Viewer() {
 
   return (
     <main className="page">
-      <header className="topbar">
-        <div><h1>Foveated LiDAR Mapping</h1><p>3D model · synchronized 2D · synchronized 2.5D</p></div>
-        <div className="header-readout"><span className="dot" /> {status}</div>
-      </header>
-      <section className="toolbar panel">
-        <div className="pill">3 VIEWS</div><div className="pill muted">360° / 16 RINGS</div><div className="grow" />
-        <button className={state.current.sync ? 'btn active' : 'btn'} onClick={toggleSync}><span className="tiny-dot" /> {state.current.sync ? 'SYNC ON' : 'SYNC OFF'}</button>
-        <button className="btn" onClick={() => turn(-5)}>↶ 5°</button><button className="btn" onClick={() => turn(5)}>5° ↷</button>
-      </section>
+      <header className="topbar"><div><h1>Foveated LiDAR Mapping</h1><p>3D model · synchronized 2D · synchronized 2.5D</p></div><div className="header-readout"><span className="dot" /> {status}</div></header>
+      <section className="toolbar panel"><div className="pill">3 VIEWS</div><div className="pill muted">360° / 16 RINGS</div><div className="grow" /><button className={state.current.sync ? 'btn active' : 'btn'} onClick={toggleSync}><span className="tiny-dot" /> {state.current.sync ? 'SYNC ON' : 'SYNC OFF'}</button><button className="btn" onClick={() => turn(-5)}>↶ 5°</button><button className="btn" onClick={() => turn(5)}>5° ↷</button></section>
       <section className="views">
-        <article className="view-card">
-          <div className="card-head"><span>3D</span><small>Interactive 3D space · orbit · pan · zoom</small></div>
-          <div className="three-stage" ref={mount} />
-          <div className="corner axis">X&nbsp; <i>Y</i>&nbsp; Z</div>
-          <div className="card-footer">LEFT DRAG · ORBIT &nbsp;&nbsp; RIGHT DRAG · PAN &nbsp;&nbsp; WHEEL · ZOOM</div>
-        </article>
+        <article className="view-card"><div className="card-head"><span>3D</span><small>Interactive 3D space · orbit · pan · zoom</small></div><div className="three-stage" ref={mount} /><div className="corner axis">X&nbsp; <i>Y</i>&nbsp; Z</div><div className="card-footer">LEFT DRAG · ORBIT &nbsp;&nbsp; RIGHT DRAG · PAN &nbsp;&nbsp; WHEEL · ZOOM</div></article>
         <PolarView heading={heading} />
         <GridView heading={heading} />
       </section>
-      <section className="analysis panel">
-        <div><span className="section-kicker">FOV / ORIENTATION</span><strong>{heading}°</strong><small>linked heading</small></div>
-        <div><span className="section-kicker">INPUT</span><strong>3D CUBOID</strong><small>primary visualization input</small></div>
-        <div><span className="section-kicker">PIPELINE</span><strong>3D → 2D → 2.5D → FRNet</strong><small>processing boundary is backend</small></div>
-      </section>
+      <section className="analysis panel"><div><span className="section-kicker">FOV / ORIENTATION</span><strong>{heading}°</strong><small>linked heading</small></div><div><span className="section-kicker">INPUT</span><strong>3D CUBOID</strong><small>primary visualization input</small></div><div><span className="section-kicker">PIPELINE</span><strong>3D → 2D → 2.5D → FRNet</strong><small>processing boundary is backend</small></div></section>
     </main>
   );
 }
