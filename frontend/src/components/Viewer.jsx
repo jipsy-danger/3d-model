@@ -5,9 +5,6 @@ import './viewer.css';
 
 const API = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 const norm = (a) => ((a % 360) + 360) % 360;
-const DISPLAY_OFFSET = 180;
-const worldToDisplayHeading = (worldDegrees) => norm(worldDegrees + DISPLAY_OFFSET);
-const displayToWorldHeading = (displayDegrees) => norm(displayDegrees - DISPLAY_OFFSET);
 
 function PolarView({ heading }) {
   return (
@@ -18,7 +15,7 @@ function PolarView({ heading }) {
           {Array.from({ length: 7 }, (_, i) => <div className="ring" key={`ring-${i}`} style={{ inset: `${13 + i * 6}%` }} />)}
           {Array.from({ length: 8 }, (_, i) => <div className="ray" key={`ray-${i}`} style={{ transform: `rotate(${i * 45}deg)` }} />)}
           <div className="center-dot" />
-          <div className="heading-line" style={{ transform: `rotate(${heading + 180}deg)` }} />
+          <div className="heading-line" style={{ transform: `rotate(${heading}deg)` }} />
         </div>
         <div className="angle-readout">{String(heading).padStart(3, '0')}°</div>
       </div>
@@ -30,7 +27,7 @@ function PolarView({ heading }) {
 function GridView({ heading }) {
   const grid = useRef(null);
   useEffect(() => {
-    if (grid.current) grid.current.style.transform = `rotate(${heading + 180}deg)`;
+    if (grid.current) grid.current.style.transform = `rotate(${heading}deg)`;
   }, [heading]);
 
   return (
@@ -89,16 +86,17 @@ function add3DRuler(scene) {
   const circleGeometry = new THREE.BufferGeometry().setFromPoints(circlePoints);
   rulerGroup.add(new THREE.Line(circleGeometry, new THREE.LineBasicMaterial({ color: 0x477b88, transparent: true, opacity: 0.72 })));
 
-  // Clockwise convention viewed from above:
-  // 180° top → 270° right → 0° bottom → 90° left → 180° top.
+  // Required 3D azimuth convention when viewed from above:
+  // 0° = top/front, 90° = right, 180° = bottom/back, 270° = left, 360° = top/front.
+  // Increasing degrees therefore move clockwise around the ruler.
   for (let degree = 0; degree <= 360; degree += 10) {
-    const worldAngle = ((degree - DISPLAY_OFFSET) * Math.PI) / 180;
+    const angle = (degree * Math.PI) / 180;
     const major = degree % 30 === 0;
     const outer = radius + 0.13;
     const inner = radius - (major ? 0.26 : 0.15);
     const points = [
-      new THREE.Vector3(Math.sin(worldAngle) * inner, -1.48, Math.cos(worldAngle) * inner),
-      new THREE.Vector3(Math.sin(worldAngle) * outer, -1.48, Math.cos(worldAngle) * outer),
+      new THREE.Vector3(Math.sin(angle) * inner, -1.48, Math.cos(angle) * inner),
+      new THREE.Vector3(Math.sin(angle) * outer, -1.48, Math.cos(angle) * outer),
     ];
     const geometry = new THREE.BufferGeometry().setFromPoints(points);
     rulerGroup.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({
@@ -110,7 +108,7 @@ function add3DRuler(scene) {
     if (major) {
       const label = makeDegreeSprite(`${degree}°`);
       const labelRadius = radius + 0.58;
-      label.position.set(Math.sin(worldAngle) * labelRadius, -1.43, Math.cos(worldAngle) * labelRadius);
+      label.position.set(Math.sin(angle) * labelRadius, -1.43, Math.cos(angle) * labelRadius);
       if (degree === 360) {
         label.position.x += 0.30;
         label.position.z += 0.30;
@@ -146,7 +144,8 @@ export default function Viewer() {
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0x05080a);
       const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 200);
-      camera.position.set(0, 5.5, -7.5);
+      // Default camera is on +Z so the front/top of the 3D ruler is 0°.
+      camera.position.set(0, 5.5, 7.5);
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.setClearColor(0x05080a, 1);
@@ -190,7 +189,7 @@ export default function Viewer() {
 
       const controls = new OrbitControls(camera, renderer.domElement);
       const defaultTarget = new THREE.Vector3(0, -0.35, 0);
-      const defaultPosition = new THREE.Vector3(0, 5.5, -7.5);
+      const defaultPosition = new THREE.Vector3(0, 5.5, 7.5);
       controls.target.copy(defaultTarget);
       controls.enableDamping = true;
       controls.dampingFactor = 0.075;
@@ -205,7 +204,7 @@ export default function Viewer() {
       controls.screenSpacePanning = true;
       renderer.domElement.addEventListener('contextmenu', (event) => event.preventDefault());
       three.current = { camera, controls, defaultPosition, defaultTarget };
-      setStatus('3D READY · CUBOID · CLOCKWISE');
+      setStatus('3D READY · CUBOID · 0° TOP · CLOCKWISE');
 
       const resize = () => {
         const width = Math.max(1, root.clientWidth);
@@ -220,8 +219,7 @@ export default function Viewer() {
 
       controls.addEventListener('change', () => {
         const offset = camera.position.clone().sub(controls.target);
-        const worldHeading = norm((Math.atan2(offset.x, offset.z) * 180) / Math.PI);
-        state.current.heading = worldToDisplayHeading(worldHeading);
+        state.current.heading = norm((Math.atan2(offset.x, offset.z) * 180) / Math.PI);
         state.current.pitch = (Math.asin(Math.max(-1, Math.min(1, offset.y / offset.length()))) * 180) / Math.PI;
         state.current.zoom = Math.max(0.55, Math.min(1.8, 6.7 / offset.length()));
         state.current.panX = controls.target.x;
@@ -271,7 +269,7 @@ export default function Viewer() {
         const pointMaterial = new THREE.PointsMaterial({ color: 0xa7efff, size: 0.065, sizeAttenuation: true, transparent: true, opacity: 0.8 });
         scene.add(new THREE.Points(pointGeometry, pointMaterial));
         setStatus(`BACKEND · ${data.point_count ?? data.points.length} PTS`);
-      }).catch(() => setStatus('3D READY · LOCAL CUBOID · CLOCKWISE'));
+      }).catch(() => setStatus('3D READY · LOCAL CUBOID · 0° TOP · CLOCKWISE'));
     } catch (error) {
       console.error(error);
       setStatus('3D RENDER ERROR');
@@ -297,10 +295,10 @@ export default function Viewer() {
           if (!viewer) return;
           const offset = viewer.camera.position.clone().sub(viewer.controls.target);
           const radius = Math.max(0.001, Math.hypot(offset.x, offset.z));
-          const worldAngle = (displayToWorldHeading(nextHeading) * Math.PI) / 180;
+          const angle = (nextHeading * Math.PI) / 180;
           state.current.applyingRemote = true;
-          viewer.camera.position.x = viewer.controls.target.x + Math.sin(worldAngle) * radius;
-          viewer.camera.position.z = viewer.controls.target.z + Math.cos(worldAngle) * radius;
+          viewer.camera.position.x = viewer.controls.target.x + Math.sin(angle) * radius;
+          viewer.camera.position.z = viewer.controls.target.z + Math.cos(angle) * radius;
           viewer.controls.update();
         } catch {}
       };
@@ -339,7 +337,7 @@ export default function Viewer() {
     state.current.panX = 0;
     state.current.panY = 0;
     setHeading(0);
-    setStatus('3D RESET · 0° · CLOCKWISE');
+    setStatus('3D RESET · 0° TOP · CLOCKWISE');
     if (state.current.sync) publish();
   };
 
@@ -364,7 +362,7 @@ export default function Viewer() {
         <PolarView heading={heading} />
         <GridView heading={heading} />
       </section>
-      <section className="analysis panel"><div><span className="section-kicker">FOV / ORIENTATION</span><strong>{heading}°</strong><small>linked heading</small></div><div><span className="section-kicker">INPUT</span><strong>3D CUBOID</strong><small>local fallback / backend frame</small></div><div><span className="section-kicker">RULER</span><strong>CLOCKWISE 180° → 360°/0° → 90°</strong><small>180° top · 270° right · 0° bottom · 90° left</small></div></section>
+      <section className="analysis panel"><div><span className="section-kicker">FOV / ORIENTATION</span><strong>{heading}°</strong><small>linked heading</small></div><div><span className="section-kicker">INPUT</span><strong>3D CUBOID</strong><small>local fallback / backend frame</small></div><div><span className="section-kicker">RULER</span><strong>CLOCKWISE 0° → 360°</strong><small>0° top · 90° right · 180° bottom · 270° left</small></div></section>
     </main>
   );
 }
