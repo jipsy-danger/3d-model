@@ -9,17 +9,17 @@ const norm = (a) => ((a % 360) + 360) % 360;
 function PolarView({ heading }) {
   return (
     <article className="view-card">
-      <div className="card-head"><span>2D</span><small>Backend polar projection</small></div>
-      <div className="polar-wrap">
-        <div className="polar-surface">
-          {Array.from({ length: 7 }, (_, i) => <div className="ring" key={`ring-${i}`} style={{ inset: `${13 + i * 6}%` }} />)}
-          {Array.from({ length: 8 }, (_, i) => <div className="ray" key={`ray-${i}`} style={{ transform: `rotate(${i * 45}deg)` }} />)}
-          <div className="center-dot" />
-          <div className="heading-line" style={{ transform: `rotate(${heading}deg)` }} />
+      <div className="card-head"><span>2D</span><small>3D heading projection · synchronized grid</small></div>
+      <div className="polar-wrap two-d-wrap">
+        <div className="two-d-grid">
+          {Array.from({ length: 13 }, (_, i) => <div className="two-d-grid-line vertical" key={`v-${i}`} style={{ left: `${i * 8.333}%` }} />)}
+          {Array.from({ length: 11 }, (_, i) => <div className="two-d-grid-line horizontal" key={`h-${i}`} style={{ top: `${i * 10}%` }} />)}
+          <div className="two-d-center" />
+          <div className="two-d-heading" style={{ transform: `translate(-50%, -100%) rotate(${heading}deg)` }} />
         </div>
         <div className="angle-readout">{String(heading).padStart(3, '0')}°</div>
       </div>
-      <div className="card-footer">Azimuth projection</div>
+      <div className="card-footer">2D GRID · 3D HEADING LINKED</div>
     </article>
   );
 }
@@ -146,7 +146,7 @@ export default function Viewer() {
       scene.background = new THREE.Color(0x05080a);
       const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 200);
       // Keep the existing reference geometry/ruler unchanged. The reset action
-      // below chooses the 180° back-side reference view.
+      // chooses the 180° back-side reference view.
       camera.position.set(0, 5.5, 7.5);
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
