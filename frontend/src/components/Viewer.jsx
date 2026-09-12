@@ -77,7 +77,6 @@ function add3DRuler(scene) {
   const radius = 3.28;
   const rulerGroup = new THREE.Group();
   rulerGroup.name = '360-degree-ruler';
-
   const circlePoints = [];
   for (let i = 0; i <= 128; i += 1) {
     const angle = (i / 128) * Math.PI * 2;
@@ -85,11 +84,6 @@ function add3DRuler(scene) {
   }
   const circleGeometry = new THREE.BufferGeometry().setFromPoints(circlePoints);
   rulerGroup.add(new THREE.Line(circleGeometry, new THREE.LineBasicMaterial({ color: 0x477b88, transparent: true, opacity: 0.72 })));
-
-  // Required 3D azimuth convention when viewed from above:
-  // 0° = top/front, 90° = right, 180° = bottom/back, 270° = left, 360° = top/front.
-  // Increasing degrees therefore move clockwise around the ruler.
-  // The negative X term is intentional: it maps 90° to screen-right and 270° to screen-left.
   for (let degree = 0; degree <= 360; degree += 10) {
     const angle = (degree * Math.PI) / 180;
     const major = degree % 30 === 0;
@@ -100,24 +94,15 @@ function add3DRuler(scene) {
       new THREE.Vector3(-Math.sin(angle) * outer, -1.48, Math.cos(angle) * outer),
     ];
     const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    rulerGroup.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({
-      color: major ? 0x8fe9f5 : 0x456b75,
-      transparent: true,
-      opacity: major ? 0.9 : 0.6,
-    })));
-
+    rulerGroup.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: major ? 0x8fe9f5 : 0x456b75, transparent: true, opacity: major ? 0.9 : 0.6 })));
     if (major) {
       const label = makeDegreeSprite(`${degree}°`);
       const labelRadius = radius + 0.58;
       label.position.set(-Math.sin(angle) * labelRadius, -1.43, Math.cos(angle) * labelRadius);
-      if (degree === 360) {
-        label.position.x -= 0.30;
-        label.position.z += 0.30;
-      }
+      if (degree === 360) { label.position.x -= 0.30; label.position.z += 0.30; }
       rulerGroup.add(label);
     }
   }
-
   scene.add(rulerGroup);
 }
 
@@ -125,8 +110,8 @@ export default function Viewer() {
   const mount = useRef(null);
   const three = useRef(null);
   const wsRef = useRef(null);
-  const state = useRef({ heading: 0, pitch: 35, zoom: 1, panX: 0, panY: 0, sync: true, applyingRemote: false });
-  const [heading, setHeading] = useState(0);
+  const state = useRef({ heading: 180, pitch: 35, zoom: 1, panX: 0, panY: 0, sync: true, applyingRemote: false });
+  const [heading, setHeading] = useState(180);
   const [status, setStatus] = useState('3D READY');
 
   const publish = () => {
@@ -140,170 +125,63 @@ export default function Viewer() {
     let cleanup = () => {};
     const root = mount.current;
     if (!root) return undefined;
-
     try {
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0x05080a);
       const camera = new THREE.PerspectiveCamera(48, 1, 0.05, 200);
-      // Keep the existing reference geometry/ruler unchanged. The reset action
-      // chooses the 180° back-side reference view.
-      camera.position.set(0, 5.5, 7.5);
+      camera.position.set(0, 5.5, -7.5);
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.setClearColor(0x05080a, 1);
       root.appendChild(renderer.domElement);
-
       scene.add(new THREE.HemisphereLight(0xdff7ff, 0x162027, 2.2));
-      const key = new THREE.DirectionalLight(0xffffff, 4);
-      key.position.set(6, 10, 8);
-      scene.add(key);
-      const fill = new THREE.DirectionalLight(0x73dfff, 2.5);
-      fill.position.set(-7, 5, -5);
-      scene.add(fill);
-
-      const floor = new THREE.GridHelper(18, 36, 0x31515c, 0x172a31);
-      floor.position.y = -1.55;
-      scene.add(floor);
-      const axes = new THREE.AxesHelper(3.5);
-      axes.position.set(-4, -1.54, -4);
-      scene.add(axes);
-
+      const key = new THREE.DirectionalLight(0xffffff, 4); key.position.set(6, 10, 8); scene.add(key);
+      const fill = new THREE.DirectionalLight(0x73dfff, 2.5); fill.position.set(-7, 5, -5); scene.add(fill);
+      const floor = new THREE.GridHelper(18, 36, 0x31515c, 0x172a31); floor.position.y = -1.55; scene.add(floor);
+      const axes = new THREE.AxesHelper(3.5); axes.position.set(-4, -1.54, -4); scene.add(axes);
       const size = 2.3;
       const cubeGeometry = new THREE.BoxGeometry(size, size, size);
       const cubeMaterial = new THREE.MeshStandardMaterial({ color: 0x7896a0, metalness: 0.15, roughness: 0.35, emissive: 0x13272e, emissiveIntensity: 0.7 });
-      const cuboid = new THREE.Mesh(cubeGeometry, cubeMaterial);
-      cuboid.position.set(0, -0.4, 0);
-      scene.add(cuboid);
-      const edgeGeometry = new THREE.EdgesGeometry(cubeGeometry);
-      const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x9bf5ff });
-      cuboid.add(new THREE.LineSegments(edgeGeometry, edgeMaterial));
+      const cuboid = new THREE.Mesh(cubeGeometry, cubeMaterial); cuboid.position.set(0, -0.4, 0); scene.add(cuboid);
+      const edgeGeometry = new THREE.EdgesGeometry(cubeGeometry); const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x9bf5ff }); cuboid.add(new THREE.LineSegments(edgeGeometry, edgeMaterial));
       cuboid.add(new THREE.Mesh(new THREE.SphereGeometry(0.1, 20, 20), new THREE.MeshBasicMaterial({ color: 0x76ff91 })));
-
-      const base = new THREE.Mesh(new THREE.CircleGeometry(2.8, 64), new THREE.MeshBasicMaterial({ color: 0x0c171b, transparent: true, opacity: 0.75, side: THREE.DoubleSide }));
-      base.rotation.x = -Math.PI / 2;
-      base.position.y = -1.54;
-      scene.add(base);
-      const baseEdge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.CylinderGeometry(2.8, 2.8, 0.02, 64)), new THREE.LineBasicMaterial({ color: 0x2c707e }));
-      baseEdge.position.y = -1.52;
-      scene.add(baseEdge);
-
+      const base = new THREE.Mesh(new THREE.CircleGeometry(2.8, 64), new THREE.MeshBasicMaterial({ color: 0x0c171b, transparent: true, opacity: 0.75, side: THREE.DoubleSide })); base.rotation.x = -Math.PI / 2; base.position.y = -1.54; scene.add(base);
+      const baseEdge = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.CylinderGeometry(2.8, 2.8, 0.02, 64)), new THREE.LineBasicMaterial({ color: 0x2c707e })); baseEdge.position.y = -1.52; scene.add(baseEdge);
       add3DRuler(scene);
-
       const controls = new OrbitControls(camera, renderer.domElement);
       const defaultTarget = new THREE.Vector3(0, -0.35, 0);
-      const defaultPosition = new THREE.Vector3(0, 5.5, 7.5);
       controls.target.copy(defaultTarget);
-      controls.enableDamping = true;
-      controls.dampingFactor = 0.075;
-      controls.enableRotate = true;
-      controls.enablePan = true;
-      controls.enableZoom = true;
-      controls.rotateSpeed = 0.9;
-      controls.panSpeed = 1;
-      controls.zoomSpeed = 1;
-      controls.minDistance = 3;
-      controls.maxDistance = 35;
-      controls.screenSpacePanning = true;
+      controls.enableDamping = true; controls.dampingFactor = 0.075; controls.enableRotate = true; controls.enablePan = true; controls.enableZoom = true;
+      controls.rotateSpeed = 0.9; controls.panSpeed = 1; controls.zoomSpeed = 1; controls.minDistance = 3; controls.maxDistance = 35; controls.minPolarAngle = THREE.MathUtils.degToRad(8); controls.maxPolarAngle = THREE.MathUtils.degToRad(88); controls.screenSpacePanning = true;
       renderer.domElement.addEventListener('contextmenu', (event) => event.preventDefault());
-      three.current = { camera, controls, defaultPosition, defaultTarget };
-      setStatus('3D READY · CUBOID · 0° TOP · CLOCKWISE');
-
-      const resize = () => {
-        const width = Math.max(1, root.clientWidth);
-        const height = Math.max(1, root.clientHeight);
-        renderer.setSize(width, height, false);
-        camera.aspect = width / height;
-        camera.updateProjectionMatrix();
-      };
-      const observer = new ResizeObserver(resize);
-      observer.observe(root);
-      resize();
-
+      three.current = { camera, controls, defaultTarget: defaultTarget.clone() };
+      setStatus('3D READY · CUBOID · 180° DEFAULT');
+      const resize = () => { const width = Math.max(1, root.clientWidth), height = Math.max(1, root.clientHeight); renderer.setSize(width, height, false); camera.aspect = width / height; camera.updateProjectionMatrix(); };
+      const observer = new ResizeObserver(resize); observer.observe(root); resize();
       controls.addEventListener('change', () => {
         const offset = camera.position.clone().sub(controls.target);
         state.current.heading = norm((Math.atan2(offset.x, offset.z) * 180) / Math.PI);
         state.current.pitch = (Math.asin(Math.max(-1, Math.min(1, offset.y / offset.length()))) * 180) / Math.PI;
         state.current.zoom = Math.max(0.55, Math.min(1.8, 6.7 / offset.length()));
-        state.current.panX = controls.target.x;
-        state.current.panY = controls.target.z;
+        state.current.panX = controls.target.x; state.current.panY = controls.target.z;
         setHeading(Math.round(state.current.heading));
-        if (state.current.applyingRemote) {
-          state.current.applyingRemote = false;
-        } else if (state.current.sync) {
-          publish();
-        }
+        if (state.current.applyingRemote) state.current.applyingRemote = false; else if (state.current.sync) publish();
       });
-
       let animationFrame = 0;
-      const render = () => {
-        if (disposed) return;
-        controls.update();
-        renderer.render(scene, camera);
-        animationFrame = requestAnimationFrame(render);
-      };
+      const render = () => { if (disposed) return; controls.update(); renderer.render(scene, camera); animationFrame = requestAnimationFrame(render); };
       render();
-
-      cleanup = () => {
-        cancelAnimationFrame(animationFrame);
-        observer.disconnect();
-        controls.dispose();
-        cubeGeometry.dispose();
-        cubeMaterial.dispose();
-        edgeGeometry.dispose();
-        edgeMaterial.dispose();
-        scene.traverse((object) => {
-          if (object.geometry) object.geometry.dispose();
-          if (object.material) {
-            if (object.material.map) object.material.map.dispose();
-            object.material.dispose();
-          }
-        });
-        renderer.dispose();
-        root.innerHTML = '';
-        three.current = null;
-      };
-
-      fetch(`${API}/api/frame`).then((response) => (response.ok ? response.json() : Promise.reject(new Error('backend unavailable')))).then((data) => {
-        if (disposed || !Array.isArray(data?.points) || !data.points.length) return;
-        const positions = new Float32Array(data.points.flat());
-        const pointGeometry = new THREE.BufferGeometry();
-        pointGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        const pointMaterial = new THREE.PointsMaterial({ color: 0xa7efff, size: 0.065, sizeAttenuation: true, transparent: true, opacity: 0.8 });
-        scene.add(new THREE.Points(pointGeometry, pointMaterial));
-        setStatus(`BACKEND · ${data.point_count ?? data.points.length} PTS`);
-      }).catch(() => setStatus('3D READY · LOCAL CUBOID · 0° TOP · CLOCKWISE'));
-    } catch (error) {
-      console.error(error);
-      setStatus('3D RENDER ERROR');
-    }
-
+      cleanup = () => { cancelAnimationFrame(animationFrame); observer.disconnect(); controls.dispose(); cubeGeometry.dispose(); cubeMaterial.dispose(); edgeGeometry.dispose(); edgeMaterial.dispose(); scene.traverse((object) => { if (object.geometry) object.geometry.dispose(); if (object.material) { if (object.material.map) object.material.map.dispose(); object.material.dispose(); } }); renderer.dispose(); root.innerHTML = ''; three.current = null; };
+      fetch(`${API}/api/frame`).then((response) => (response.ok ? response.json() : Promise.reject(new Error('backend unavailable')))).then((data) => { if (disposed || !Array.isArray(data?.points) || !data.points.length) return; const positions = new Float32Array(data.points.flat()); const pointGeometry = new THREE.BufferGeometry(); pointGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3)); const pointMaterial = new THREE.PointsMaterial({ color: 0xa7efff, size: 0.065, sizeAttenuation: true, transparent: true, opacity: 0.8 }); scene.add(new THREE.Points(pointGeometry, pointMaterial)); setStatus(`BACKEND · ${data.point_count ?? data.points.length} PTS`); }).catch(() => setStatus('3D READY · LOCAL CUBOID · 180° DEFAULT'));
+    } catch (error) { console.error(error); setStatus('3D RENDER ERROR'); }
     return () => { disposed = true; cleanup(); };
   }, []);
 
   useEffect(() => {
     let socket;
     try {
-      socket = new WebSocket(API.replace(/^http/, 'ws') + '/ws/view');
-      wsRef.current = socket;
+      socket = new WebSocket(API.replace(/^http/, 'ws') + '/ws/view'); wsRef.current = socket;
       socket.onopen = () => setStatus('BACKEND CONNECTED · 3D READY');
-      socket.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          if (message.type !== 'view_state' || !state.current.sync) return;
-          const nextHeading = norm(message.heading ?? state.current.heading);
-          state.current.heading = nextHeading;
-          setHeading(Math.round(nextHeading));
-          const viewer = three.current;
-          if (!viewer) return;
-          const offset = viewer.camera.position.clone().sub(viewer.controls.target);
-          const radius = Math.max(0.001, Math.hypot(offset.x, offset.z));
-          const angle = (nextHeading * Math.PI) / 180;
-          state.current.applyingRemote = true;
-          viewer.camera.position.x = viewer.controls.target.x + Math.sin(angle) * radius;
-          viewer.camera.position.z = viewer.controls.target.z + Math.cos(angle) * radius;
-          viewer.controls.update();
-        } catch {}
-      };
+      socket.onmessage = (event) => { try { const message = JSON.parse(event.data); if (message.type !== 'view_state' || !state.current.sync) return; const nextHeading = norm(message.heading ?? state.current.heading); state.current.heading = nextHeading; setHeading(Math.round(nextHeading)); const viewer = three.current; if (!viewer) return; const offset = viewer.camera.position.clone().sub(viewer.controls.target); const radius = Math.max(0.001, Math.hypot(offset.x, offset.z)); const angle = (nextHeading * Math.PI) / 180; state.current.applyingRemote = true; viewer.camera.position.x = viewer.controls.target.x + Math.sin(angle) * radius; viewer.camera.position.z = viewer.controls.target.z + Math.cos(angle) * radius; viewer.controls.update(); } catch {} };
     } catch {}
     return () => { try { socket?.close(); } catch {} };
   }, []);
@@ -320,28 +198,23 @@ export default function Viewer() {
       viewer.camera.position.z = viewer.controls.target.z + z;
       viewer.controls.update();
     } else {
-      state.current.heading = norm(state.current.heading + amount);
-      setHeading(Math.round(state.current.heading));
-      if (state.current.sync) publish();
+      state.current.heading = norm(state.current.heading + amount); setHeading(Math.round(state.current.heading)); if (state.current.sync) publish();
     }
   };
 
   const reset3D = () => {
     const viewer = three.current;
     if (!viewer) return;
-    state.current.applyingRemote = false;
-    // Reset reference view is 180°: back/bottom side of the fixed ruler.
-    viewer.camera.position.set(0, 5.5, -7.5);
-    viewer.controls.target.set(0, -0.35, 0);
+    const target = new THREE.Vector3(0, -0.35, 0);
+    const position = new THREE.Vector3(0, 5.5, -7.5);
+    state.current.applyingRemote = true;
+    viewer.controls.target.copy(target);
+    viewer.camera.position.copy(position);
     viewer.controls.update();
-    state.current.heading = 180;
-    state.current.pitch = 35;
-    state.current.zoom = 1;
-    state.current.panX = 0;
-    state.current.panY = 0;
-    setHeading(180);
-    setStatus('3D RESET · 180° BOTTOM · CLOCKWISE');
+    state.current.heading = 180; state.current.pitch = 35; state.current.zoom = 1; state.current.panX = 0; state.current.panY = 0;
+    setHeading(180); setStatus('3D RESET · 180° BOTTOM · CLOCKWISE');
     if (state.current.sync) publish();
+    requestAnimationFrame(() => { if (three.current) { three.current.camera.position.copy(position); three.current.controls.target.copy(target); three.current.controls.update(); } });
   };
 
   return (
