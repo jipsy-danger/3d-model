@@ -145,7 +145,7 @@ export default function ProjectionOverlay() {
       const points = vertices.map(project);
       const axisButton = document.querySelector('.one-d-controls .axis-option.selected');
       const axis = ((axisButton?.textContent || 'X-AXIS').trim().toUpperCase().startsWith('Y')) ? 'y' : 'x';
-      const centroid = liveCentroid() || (Array.isArray(frame.centroid) ? project(frame.centroid) : null);
+      const projectedCentroid = liveCentroid() || (Array.isArray(frame.centroid) ? project(frame.centroid) : null);
 
       const ow = one.clientWidth, oh = one.clientHeight;
       const oneX = v => ow / 2 + v * ow / 2;
@@ -173,10 +173,22 @@ export default function ProjectionOverlay() {
         values.forEach(v => circle(oneSvg, axis === 'x' ? oneX(v) : ow / 2, axis === 'x' ? oh / 2 : oneY(v), 2.2, '#9bf5ff'));
       }
 
-      if (centroid) {
-        const cx = axis === 'x' ? oneX(centroid.x) : ow / 2;
-        const cy = axis === 'x' ? oh / 2 : oneY(centroid.y);
-        // The centroid guide follows the selected 1D axis itself: horizontal for X, vertical for Y.
+      // 1D Y is a true world-space Y coordinate. Its centroid must not move with camera orbit/pitch.
+      let oneCentroid = projectedCentroid;
+      if (axis === 'y' && Array.isArray(frame.centroid) && frame.centroid.length >= 2) {
+        const worldY = Number(frame.centroid[1]);
+        const worldYs = vertices.map(v => Number(v[1])).filter(Number.isFinite);
+        if (worldYs.length) {
+          const worldMin = Math.min(...worldYs);
+          const worldMax = Math.max(...worldYs);
+          const worldSpan = Math.max(0.001, worldMax - worldMin);
+          oneCentroid = { x: 0, y: (worldY - (worldMin + worldMax) / 2) / (worldSpan / 2) };
+        }
+      }
+
+      if (oneCentroid) {
+        const cx = axis === 'x' ? oneX(oneCentroid.x) : ow / 2;
+        const cy = axis === 'x' ? oh / 2 : oneY(oneCentroid.y);
         if (axis === 'x') line(oneSvg, 0, cy, ow, cy, '#76ff91', 1.5, .72, '4 4');
         else line(oneSvg, cx, 0, cx, oh, '#76ff91', 1.5, .72, '4 4');
         circle(oneSvg, cx, cy, 5, '#76ff91');
@@ -201,8 +213,8 @@ export default function ProjectionOverlay() {
         line(twoSvg, A[0], A[1], B[0], B[1], '#9bf5ff', 1.5);
       });
       points.filter(Boolean).forEach(p => { const q = xy(p); circle(twoSvg, q[0], q[1], 2.2, '#9bf5ff'); });
-      if (centroid) {
-        const q = xy(centroid);
+      if (projectedCentroid) {
+        const q = xy(projectedCentroid);
         circle(twoSvg, q[0], q[1], 6, '#76ff91');
       }
     };
