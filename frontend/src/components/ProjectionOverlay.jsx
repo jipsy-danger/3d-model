@@ -173,24 +173,12 @@ export default function ProjectionOverlay() {
         values.forEach(v => circle(oneSvg, axis === 'x' ? oneX(v) : ow / 2, axis === 'x' ? oh / 2 : oneY(v), 2.2, '#9bf5ff'));
       }
 
-      // 1D Y is a true world-space Y coordinate. Its centroid must not move with camera orbit/pitch.
-      let oneCentroid = projectedCentroid;
-      if (axis === 'y' && Array.isArray(frame.centroid) && frame.centroid.length >= 2) {
-        const worldY = Number(frame.centroid[1]);
-        const worldYs = vertices.map(v => Number(v[1])).filter(Number.isFinite);
-        if (worldYs.length) {
-          const worldMin = Math.min(...worldYs);
-          const worldMax = Math.max(...worldYs);
-          const worldSpan = Math.max(0.001, worldMax - worldMin);
-          oneCentroid = { x: 0, y: (worldY - (worldMin + worldMax) / 2) / (worldSpan / 2) };
-        }
-      }
-
-      if (oneCentroid) {
-        const cx = axis === 'x' ? oneX(oneCentroid.x) : ow / 2;
-        const cy = axis === 'x' ? oh / 2 : oneY(oneCentroid.y);
-        if (axis === 'x') line(oneSvg, 0, cy, ow, cy, '#76ff91', 1.5, .72, '4 4');
-        else line(oneSvg, cx, 0, cx, oh, '#76ff91', 1.5, .72, '4 4');
+      // There is exactly one 1D centroid axis: the horizontal X-axis.
+      // X-axis and Y-axis modes both keep the same centroid on that horizontal axis.
+      if (projectedCentroid) {
+        const cx = axis === 'x' ? oneX(projectedCentroid.x) : ow / 2;
+        const cy = oh / 2;
+        line(oneSvg, 0, cy, ow, cy, '#76ff91', 1.5, .72, '4 4');
         circle(oneSvg, cx, cy, 5, '#76ff91');
       }
 
