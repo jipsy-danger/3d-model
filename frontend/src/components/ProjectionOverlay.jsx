@@ -136,7 +136,8 @@ export default function ProjectionOverlay() {
       const points = vertices.map(project);
       const axisButton = document.querySelector('.one-d-controls .axis-option.selected');
       const axis = ((axisButton?.textContent || 'X-AXIS').trim().toUpperCase().startsWith('Y')) ? 'y' : 'x';
-      const centroid = Array.isArray(frame.centroid) ? project(frame.centroid) : null;
+      const centroid3d = Array.isArray(frame.centroid) ? frame.centroid.map(Number) : null;
+      const centroid = centroid3d ? project(centroid3d) : null;
 
       const ow = one.clientWidth, oh = one.clientHeight;
       const oneX = v => ow / 2 + v * ow / 2;
@@ -164,11 +165,20 @@ export default function ProjectionOverlay() {
         values.forEach(v => circle(oneSvg, axis === 'x' ? oneX(v) : ow / 2, axis === 'x' ? oh / 2 : oneY(v), 2.2, '#9bf5ff'));
       }
 
-      if (centroid) {
+      if (centroid3d && centroid) {
+        const p0 = project([centroid3d[0] - 20, centroid3d[1], centroid3d[2]]);
+        const p1 = project([centroid3d[0] + 20, centroid3d[1], centroid3d[2]]);
+        if (p0 && p1) {
+          if (axis === 'x') {
+            const x0 = oneX(p0.x), x1 = oneX(p1.x);
+            line(oneSvg, x0, oh / 2, x1, oh / 2, '#76ff91', 1.8, .9);
+          } else {
+            const y0 = oneY(p0.y), y1 = oneY(p1.y);
+            line(oneSvg, ow / 2, y0, ow / 2, y1, '#76ff91', 1.8, .9);
+          }
+        }
         const cx = axis === 'x' ? oneX(centroid.x) : ow / 2;
         const cy = axis === 'x' ? oh / 2 : oneY(centroid.y);
-        if (axis === 'x') line(oneSvg, cx, 0, cx, oh, '#76ff91', 1.5, .72, '4 4');
-        else line(oneSvg, 0, cy, ow, cy, '#76ff91', 1.5, .72, '4 4');
         circle(oneSvg, cx, cy, 5, '#76ff91');
       }
 
