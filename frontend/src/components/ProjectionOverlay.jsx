@@ -162,7 +162,7 @@ export default function ProjectionOverlay() {
       const axis = ((axisButton?.textContent || 'X-AXIS').trim().toUpperCase().startsWith('Y')) ? 'y' : 'x';
       const centroidScreen = camera?.centroid_screen;
 
-      // 1D stays the existing live camera projection. Its single centroid line is always X-axis.
+      // 1D: one spatial axis, with the single centroid always carried on the X baseline.
       const ow = one.clientWidth, oh = one.clientHeight;
       const oneX = v => ow / 2 + v * ow / 2;
       const oneY = v => oh / 2 - v * oh / 2;
@@ -189,36 +189,33 @@ export default function ProjectionOverlay() {
         values.forEach(v => circle(oneSvg, axis === 'x' ? oneX(v) : ow / 2, axis === 'x' ? oh / 2 : oneY(v), 2.2, '#9bf5ff'));
       }
       if (centroidScreen && Number.isFinite(Number(centroidScreen.x))) {
-        const cx = axis === 'x' ? oneX(Number(centroidScreen.x)) : ow / 2;
+        const cx = oneX(Number(centroidScreen.x));
         const cy = oh / 2;
         line(oneSvg, 0, cy, ow, cy, '#76ff91', 1.5, .72, '4 4');
         circle(oneSvg, cx, cy, 5, '#76ff91');
       }
 
-      // 2D IS A REAL 2D WORLD-SPACE VIEW: collapse the 3D input onto XY.
-      // Z is intentionally discarded. There are many 2D points and exactly ONE 2D face.
+      // 2D: realtime screen-space silhouette of the SAME 3D object.
+      // Every frame is derived from the current 3D camera, so orbit/zoom/pan changes
+      // the 2D shape exactly as the visible outline changes in the 3D view.
+      // There is no Z/world-XY flattening here, no 3D edges/faces, and no depth lines.
       const tw = two.clientWidth, th = two.clientHeight;
-      const xyPoints = vertices.map((v, i) => ({
-        x: Number(v[0]),
-        y: Number(v[1]),
-        i,
-      })).filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
+      const visible = cameraPoints.filter(Boolean);
+      if (!visible.length) return;
 
-      if (!xyPoints.length) return;
+      const hull = convexHull(visible);
+      const minHX = Math.min(...hull.map(p => p.x));
+      const maxHX = Math.max(...hull.map(p => p.x));
+      const minHY = Math.min(...hull.map(p => p.y));
+      const maxHY = Math.max(...hull.map(p => p.y));
+      const hullCenterX = (minHX + maxHX) / 2;
+      const hullCenterY = (minHY + maxHY) / 2;
+      const hullSpanX = Math.max(.001, maxHX - minHX);
+      const hullSpanY = Math.max(.001, maxHY - minHY);
+      const scale = Math.min((tw * .72) / hullSpanX, (th * .72) / hullSpanY);
+      const xy = p => [tw / 2 + (p.x - hullCenterX) * scale, th / 2 - (p.y - hullCenterY) * scale];
 
-      const minX = Math.min(...xyPoints.map(p => p.x));
-      const maxX = Math.max(...xyPoints.map(p => p.x));
-      const minY = Math.min(...xyPoints.map(p => p.y));
-      const maxY = Math.max(...xyPoints.map(p => p.y));
-      const cxWorld = (minX + maxX) / 2;
-      const cyWorld = (minY + maxY) / 2;
-      const spanX = Math.max(0.001, maxX - minX);
-      const spanY = Math.max(0.001, maxY - minY);
-      const scale = Math.min((tw * .70) / spanX, (th * .70) / spanY);
-      const xy = p => [tw / 2 + (p.x - cxWorld) * scale, th / 2 - (p.y - cyWorld) * scale];
-
-      // One 2D face: the XY convex hull of all available 2D points.
-      const hull = convexHull(xyPoints);
+      // One and only one 2D face: the projected visible outline.
       if (hull.length >= 3) {
         const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
         poly.setAttribute('points', hull.map(xy).map(p => p.join(',')).join(' '));
@@ -229,16 +226,17 @@ export default function ProjectionOverlay() {
         twoSvg.appendChild(poly);
       }
 
-      // Many independent 2D spatial points. No depth lines, no 3D edges, no 3D faces.
-      xyPoints.forEach(p => {
+      // Many 2D points from the current projected outline. They are independent 2D
+      // samples; no lines are drawn between them except the single outline face above.
+      visible.forEach(p => {
         const q = xy(p);
         circle(twoSvg, q[0], q[1], 2.8, '#9bf5ff');
       });
 
-      // The same backend/3D centroid, represented only by its XY coordinates.
-      if (Array.isArray(frame.centroid) && frame.centroid.length >= 2) {
-        const centroid2D = xy({ x: Number(frame.centroid[0]), y: Number(frame.centroid[1]) });
-        circle(twoSvg, centroid2D[0], centroid2D[1], 6, '#76ff91');
+      // Same single backend/3D centroid, represented in current 2D screen space.
+      if (centroidScreen && Number.isFinite(Number(centroidScreen.x)) && Number.isFinite(Number(centroidScreen.y))) {
+        const q = xy({ x: Number(centroidScreen.x), y: Number(centroidScreen.y) });
+        circle(twoSvg, q[0], q[1], 6, '#76ff91');
       }
     };
 
