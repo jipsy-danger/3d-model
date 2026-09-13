@@ -176,8 +176,9 @@ export default function ProjectionOverlay() {
       if (centroid) {
         const cx = axis === 'x' ? oneX(centroid.x) : ow / 2;
         const cy = axis === 'x' ? oh / 2 : oneY(centroid.y);
-        if (axis === 'x') line(oneSvg, cx, 0, cx, oh, '#76ff91', 1.5, .72, '4 4');
-        else line(oneSvg, 0, cy, ow, cy, '#76ff91', 1.5, .72, '4 4');
+        // The centroid guide follows the selected 1D axis itself: horizontal for X, vertical for Y.
+        if (axis === 'x') line(oneSvg, 0, cy, ow, cy, '#76ff91', 1.5, .72, '4 4');
+        else line(oneSvg, cx, 0, cx, oh, '#76ff91', 1.5, .72, '4 4');
         circle(oneSvg, cx, cy, 5, '#76ff91');
       }
 
