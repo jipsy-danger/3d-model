@@ -8,10 +8,13 @@ export default function ProjectionOverlay() {
   useEffect(() => {
     let dead = false;
     let timer = 0;
+    let reconnectTimer = 0;
     let frame = null;
     let camera = null;
     let oneSvg = null;
     let twoSvg = null;
+    let ws = null;
+    let wsConnected = false;
     const hidden = [];
 
     const hideDiagnostics = root => {
@@ -100,6 +103,12 @@ export default function ProjectionOverlay() {
       };
     };
 
+    const liveCentroid = () => {
+      const c = camera?.centroid_screen;
+      if (!c || !Number.isFinite(Number(c.x)) || !Number.isFinite(Number(c.y))) return null;
+      return { x: Number(c.x), y: Number(c.y) };
+    };
+
     const line = (svg, x1, y1, x2, y2, stroke, width, opacity = 1, dash = null) => {
       const el = document.createElementNS('http://www.w3.org/2000/svg', 'line');
       el.setAttribute('x1', x1); el.setAttribute('y1', y1);
@@ -136,8 +145,7 @@ export default function ProjectionOverlay() {
       const points = vertices.map(project);
       const axisButton = document.querySelector('.one-d-controls .axis-option.selected');
       const axis = ((axisButton?.textContent || 'X-AXIS').trim().toUpperCase().startsWith('Y')) ? 'y' : 'x';
-      const centroid3d = Array.isArray(frame.centroid) ? frame.centroid.map(Number) : null;
-      const centroid = centroid3d ? project(centroid3d) : null;
+      const centroid = liveCentroid() || (Array.isArray(frame.centroid) ? project(frame.centroid) : null);
 
       const ow = one.clientWidth, oh = one.clientHeight;
       const oneX = v => ow / 2 + v * ow / 2;
@@ -165,20 +173,11 @@ export default function ProjectionOverlay() {
         values.forEach(v => circle(oneSvg, axis === 'x' ? oneX(v) : ow / 2, axis === 'x' ? oh / 2 : oneY(v), 2.2, '#9bf5ff'));
       }
 
-      if (centroid3d && centroid) {
-        const p0 = project([centroid3d[0] - 20, centroid3d[1], centroid3d[2]]);
-        const p1 = project([centroid3d[0] + 20, centroid3d[1], centroid3d[2]]);
-        if (p0 && p1) {
-          if (axis === 'x') {
-            const x0 = oneX(p0.x), x1 = oneX(p1.x);
-            line(oneSvg, x0, oh / 2, x1, oh / 2, '#76ff91', 1.8, .9);
-          } else {
-            const y0 = oneY(p0.y), y1 = oneY(p1.y);
-            line(oneSvg, ow / 2, y0, ow / 2, y1, '#76ff91', 1.8, .9);
-          }
-        }
+      if (centroid) {
         const cx = axis === 'x' ? oneX(centroid.x) : ow / 2;
         const cy = axis === 'x' ? oh / 2 : oneY(centroid.y);
+        if (axis === 'x') line(oneSvg, cx, 0, cx, oh, '#76ff91', 1.5, .72, '4 4');
+        else line(oneSvg, 0, cy, ow, cy, '#76ff91', 1.5, .72, '4 4');
         circle(oneSvg, cx, cy, 5, '#76ff91');
       }
 
@@ -212,23 +211,42 @@ export default function ProjectionOverlay() {
     const loadFrame = () => fetch(`${API}/api/frame`).then(r => r.ok ? r.json() : null).then(d => { if (!dead && d) { frame = d; render(); } }).catch(() => {});
     const loadState = () => fetch(`${API}/api/state`).then(r => r.ok ? r.json() : null).then(d => { if (!dead && d) { camera = d; render(); } }).catch(() => {});
 
-    const wsUrl = API.replace(/^http/, 'ws') + '/ws/view';
-    let ws;
-    try {
-      ws = new WebSocket(wsUrl);
-      ws.onmessage = e => { try { camera = JSON.parse(e.data); render(); } catch {} };
-    } catch {}
+    const connect = () => {
+      if (dead) return;
+      try {
+        ws = new WebSocket(API.replace(/^http/, 'ws') + '/ws/view');
+        ws.onopen = () => { wsConnected = true; render(); };
+        ws.onmessage = e => {
+          try {
+            const next = JSON.parse(e.data);
+            if (next?.type === 'view_state') {
+              camera = next;
+              render();
+            }
+          } catch {}
+        };
+        ws.onclose = () => {
+          wsConnected = false;
+          if (!dead) reconnectTimer = window.setTimeout(connect, 500);
+        };
+        ws.onerror = () => { try { ws.close(); } catch {} };
+      } catch {
+        wsConnected = false;
+        if (!dead) reconnectTimer = window.setTimeout(connect, 500);
+      }
+    };
 
     const poll = () => {
       if (dead) return;
-      if (!camera) loadState();
       ensureMounted();
+      if (!wsConnected) loadState();
       render();
-      timer = window.setTimeout(poll, 250);
+      timer = window.setTimeout(poll, 100);
     };
 
     loadFrame();
     loadState();
+    connect();
     poll();
 
     const observer = new MutationObserver(render);
@@ -241,6 +259,7 @@ export default function ProjectionOverlay() {
     return () => {
       dead = true;
       clearTimeout(timer);
+      clearTimeout(reconnectTimer);
       ws?.close();
       observer.disconnect();
       document.removeEventListener('click', onClick);
