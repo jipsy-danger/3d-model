@@ -103,16 +103,10 @@ export default function ProjectionOverlay() {
       };
     };
 
-    const shapeCentroid = (vertices, points) => {
-      // The centroid belongs to the cuboid/shape, never to the viewport.
-      // Prefer the actual 3D centroid from the input, then project that point.
-      if (Array.isArray(frame?.centroid)) {
-        const p = project(frame.centroid);
-        if (p) return p;
-      }
-      const valid = points.filter(Boolean);
-      if (!valid.length) return null;
-      return valid.reduce((sum, p) => ({ x: sum.x + p.x, y: sum.y + p.y }), { x: 0, y: 0 });
+    const liveCentroid = () => {
+      const c = camera?.centroid_screen;
+      if (!c || !Number.isFinite(Number(c.x)) || !Number.isFinite(Number(c.y))) return null;
+      return { x: Number(c.x), y: Number(c.y) };
     };
 
     const line = (svg, x1, y1, x2, y2, stroke, width, opacity = 1, dash = null) => {
@@ -151,7 +145,7 @@ export default function ProjectionOverlay() {
       const points = vertices.map(project);
       const axisButton = document.querySelector('.one-d-controls .axis-option.selected');
       const axis = ((axisButton?.textContent || 'X-AXIS').trim().toUpperCase().startsWith('Y')) ? 'y' : 'x';
-      const centroid = shapeCentroid(vertices, points);
+      const centroid = liveCentroid() || (Array.isArray(frame.centroid) ? project(frame.centroid) : null);
 
       const ow = one.clientWidth, oh = one.clientHeight;
       const oneX = v => ow / 2 + v * ow / 2;
@@ -177,13 +171,14 @@ export default function ProjectionOverlay() {
         rect.setAttribute('rx', '2');
         oneSvg.appendChild(rect);
         values.forEach(v => circle(oneSvg, axis === 'x' ? oneX(v) : ow / 2, axis === 'x' ? oh / 2 : oneY(v), 2.2, '#9bf5ff'));
+      }
 
-        if (centroid) {
-          const c = axis === 'x' ? oneX(centroid.x) : oneY(centroid.y);
-          if (axis === 'x') line(oneSvg, c, oh / 2 - 11, c, oh / 2 + 11, '#76ff91', 1.5, .9, '4 3');
-          else line(oneSvg, ow / 2 - 11, c, ow / 2 + 11, c, '#76ff91', 1.5, .9, '4 3');
-          circle(oneSvg, axis === 'x' ? c : ow / 2, axis === 'x' ? oh / 2 : c, 5, '#76ff91');
-        }
+      if (centroid) {
+        const cx = axis === 'x' ? oneX(centroid.x) : ow / 2;
+        const cy = axis === 'x' ? oh / 2 : oneY(centroid.y);
+        if (axis === 'x') line(oneSvg, cx, 0, cx, oh, '#76ff91', 1.5, .72, '4 4');
+        else line(oneSvg, 0, cy, ow, cy, '#76ff91', 1.5, .72, '4 4');
+        circle(oneSvg, cx, cy, 5, '#76ff91');
       }
 
       const tw = two.clientWidth, th = two.clientHeight;
@@ -207,14 +202,7 @@ export default function ProjectionOverlay() {
       points.filter(Boolean).forEach(p => { const q = xy(p); circle(twoSvg, q[0], q[1], 2.2, '#9bf5ff'); });
       if (centroid) {
         const q = xy(centroid);
-        const xs = points.filter(Boolean).map(p => xy(p)[0]);
-        const ys = points.filter(Boolean).map(p => xy(p)[1]);
-        const minX = Math.min(...xs), maxX = Math.max(...xs);
-        const minY = Math.min(...ys), maxY = Math.max(...ys);
-        // Centroid guides are clipped to the projected shape, not the screen.
-        line(twoSvg, q[0], minY, q[0], maxY, '#76ff91', 1.2, .8, '4 3');
-        line(twoSvg, minX, q[1], maxX, q[1], '#76ff91', 1.2, .8, '4 3');
-        circle(twoSvg, q[0], q[1], 5, '#76ff91');
+        circle(twoSvg, q[0], q[1], 6, '#76ff91');
       }
     };
 
