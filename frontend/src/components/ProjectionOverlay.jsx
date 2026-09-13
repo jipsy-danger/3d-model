@@ -1,13 +1,12 @@
 import React, { useEffect } from 'react';
 
 const API = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
-const EDGES = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
-const FACES = [[0,1,2,3],[4,5,6,7],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]];
 
 export default function ProjectionOverlay() {
   useEffect(() => {
     let dead = false;
     let timer = 0;
+    let frameTimer = 0;
     let reconnectTimer = 0;
     let frame = null;
     let camera = null;
@@ -84,8 +83,6 @@ export default function ProjectionOverlay() {
 
     const clearSvg = svg => { while (svg.firstChild) svg.removeChild(svg.firstChild); };
 
-    // The 1D and 2D views use exactly the same camera projection as the 3D view.
-    // Raw cuboid vertices remain the single geometry source of truth.
     const project = vertex => {
       if (!camera?.position || !camera?.right || !camera?.up || !camera?.forward) return null;
       const p = [
@@ -122,6 +119,28 @@ export default function ProjectionOverlay() {
       svg.appendChild(el);
     };
 
+    const convexHull = points => {
+      const sorted = points
+        .map((p, i) => ({ ...p, i }))
+        .sort((a, b) => a.x - b.x || a.y - b.y);
+      if (sorted.length <= 2) return sorted;
+      const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+      const lower = [];
+      for (const p of sorted) {
+        while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+        lower.push(p);
+      }
+      const upper = [];
+      for (let i = sorted.length - 1; i >= 0; i -= 1) {
+        const p = sorted[i];
+        while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+        upper.push(p);
+      }
+      lower.pop();
+      upper.pop();
+      return lower.concat(upper);
+    };
+
     const render = () => {
       const mounted = ensureMounted();
       if (!mounted || !frame?.input?.vertices || !camera) return;
@@ -138,26 +157,28 @@ export default function ProjectionOverlay() {
       clearSvg(twoSvg);
 
       const vertices = frame.input.vertices;
-      const points = vertices.map(project);
+      const cameraPoints = vertices.map(project);
       const axisButton = document.querySelector('.one-d-controls .axis-option.selected');
       const axis = ((axisButton?.textContent || 'X-AXIS').trim().toUpperCase().startsWith('Y')) ? 'y' : 'x';
-      const centroid = Array.isArray(frame.centroid) ? project(frame.centroid) : null;
+      const centroidScreen = camera?.centroid_screen;
 
-      // 1D: one spatial profile, with exactly one horizontal centroid axis in both modes.
+      // 1D stays the existing live camera projection. Its single centroid line is always X-axis.
       const ow = one.clientWidth, oh = one.clientHeight;
       const oneX = v => ow / 2 + v * ow / 2;
       const oneY = v => oh / 2 - v * oh / 2;
-      const values = points.filter(Boolean).map(p => axis === 'x' ? p.x : p.y);
+      const values = cameraPoints.filter(Boolean).map(p => axis === 'x' ? p.x : p.y);
       if (values.length) {
         const lo = Math.min(...values);
         const hi = Math.max(...values);
         const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
         if (axis === 'x') {
-          rect.setAttribute('x', oneX(lo)); rect.setAttribute('y', oh / 2 - 11);
-          rect.setAttribute('width', Math.max(2, oneX(hi) - oneX(lo))); rect.setAttribute('height', 22);
+          const a = oneX(lo), b = oneX(hi);
+          rect.setAttribute('x', a); rect.setAttribute('y', oh / 2 - 11);
+          rect.setAttribute('width', Math.max(2, b - a)); rect.setAttribute('height', 22);
         } else {
-          rect.setAttribute('x', ow / 2 - 11); rect.setAttribute('y', oneY(hi));
-          rect.setAttribute('width', 22); rect.setAttribute('height', Math.max(2, oneY(lo) - oneY(hi)));
+          const a = oneY(hi), b = oneY(lo);
+          rect.setAttribute('x', ow / 2 - 11); rect.setAttribute('y', a);
+          rect.setAttribute('width', 22); rect.setAttribute('height', Math.max(2, b - a));
         }
         rect.setAttribute('fill', '#788f98');
         rect.setAttribute('fill-opacity', '.92');
@@ -167,56 +188,67 @@ export default function ProjectionOverlay() {
         oneSvg.appendChild(rect);
         values.forEach(v => circle(oneSvg, axis === 'x' ? oneX(v) : ow / 2, axis === 'x' ? oh / 2 : oneY(v), 2.2, '#9bf5ff'));
       }
-
-      // Exactly one centroid marker and one horizontal centroid line in 1D.
-      if (centroid) {
-        const cx = axis === 'x' ? oneX(centroid.x) : ow / 2;
+      if (centroidScreen && Number.isFinite(Number(centroidScreen.x))) {
+        const cx = axis === 'x' ? oneX(Number(centroidScreen.x)) : ow / 2;
         const cy = oh / 2;
         line(oneSvg, 0, cy, ow, cy, '#76ff91', 1.5, .72, '4 4');
         circle(oneSvg, cx, cy, 5, '#76ff91');
       }
 
-      // 2D: exact screen-space projection of the same eight 3D cuboid vertices.
-      // Preserve the camera projection's aspect ratio instead of stretching X/Y independently.
+      // 2D IS A REAL 2D WORLD-SPACE VIEW: collapse the 3D input onto XY.
+      // Z is intentionally discarded. There are many 2D points and exactly ONE 2D face.
       const tw = two.clientWidth, th = two.clientHeight;
-      const scale = Math.min(tw, th) / 2;
-      const centerX = tw / 2;
-      const centerY = th / 2;
-      const xy = p => [centerX + p.x * scale, centerY - p.y * scale];
+      const xyPoints = vertices.map((v, i) => ({
+        x: Number(v[0]),
+        y: Number(v[1]),
+        i,
+      })).filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
 
-      // Draw the six projected cuboid faces first, then the twelve projected edges.
-      FACES.forEach((face, fi) => {
-        const pp = face.map(i => points[i]);
-        if (pp.some(p => !p)) return;
+      if (!xyPoints.length) return;
+
+      const minX = Math.min(...xyPoints.map(p => p.x));
+      const maxX = Math.max(...xyPoints.map(p => p.x));
+      const minY = Math.min(...xyPoints.map(p => p.y));
+      const maxY = Math.max(...xyPoints.map(p => p.y));
+      const cxWorld = (minX + maxX) / 2;
+      const cyWorld = (minY + maxY) / 2;
+      const spanX = Math.max(0.001, maxX - minX);
+      const spanY = Math.max(0.001, maxY - minY);
+      const scale = Math.min((tw * .70) / spanX, (th * .70) / spanY);
+      const xy = p => [tw / 2 + (p.x - cxWorld) * scale, th / 2 - (p.y - cyWorld) * scale];
+
+      // One 2D face: the XY convex hull of all available 2D points.
+      const hull = convexHull(xyPoints);
+      if (hull.length >= 3) {
         const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-        poly.setAttribute('points', pp.map(xy).map(p => p.join(',')).join(' '));
+        poly.setAttribute('points', hull.map(xy).map(p => p.join(',')).join(' '));
         poly.setAttribute('fill', '#788f98');
-        poly.setAttribute('fill-opacity', String(.18 + fi * .012));
+        poly.setAttribute('fill-opacity', '.30');
         poly.setAttribute('stroke', '#9bf5ff');
-        poly.setAttribute('stroke-width', '1.2');
+        poly.setAttribute('stroke-width', '1.5');
         twoSvg.appendChild(poly);
-      });
+      }
 
-      EDGES.forEach(([a, b]) => {
-        if (!points[a] || !points[b]) return;
-        const A = xy(points[a]), B = xy(points[b]);
-        line(twoSvg, A[0], A[1], B[0], B[1], '#9bf5ff', 1.5);
-      });
-
-      points.filter(Boolean).forEach(p => {
+      // Many independent 2D spatial points. No depth lines, no 3D edges, no 3D faces.
+      xyPoints.forEach(p => {
         const q = xy(p);
-        circle(twoSvg, q[0], q[1], 2.2, '#9bf5ff');
+        circle(twoSvg, q[0], q[1], 2.8, '#9bf5ff');
       });
 
-      // One and only one 2D centroid: the same backend/3D centroid projected by the same camera.
-      if (centroid) {
-        const q = xy(centroid);
-        circle(twoSvg, q[0], q[1], 6, '#76ff91');
+      // The same backend/3D centroid, represented only by its XY coordinates.
+      if (Array.isArray(frame.centroid) && frame.centroid.length >= 2) {
+        const centroid2D = xy({ x: Number(frame.centroid[0]), y: Number(frame.centroid[1]) });
+        circle(twoSvg, centroid2D[0], centroid2D[1], 6, '#76ff91');
       }
     };
 
-    const loadFrame = () => fetch(`${API}/api/frame`).then(r => r.ok ? r.json() : null).then(d => { if (!dead && d) { frame = d; render(); } }).catch(() => {});
-    const loadState = () => fetch(`${API}/api/state`).then(r => r.ok ? r.json() : null).then(d => { if (!dead && d) { camera = d; render(); } }).catch(() => {});
+    const loadFrame = () => fetch(`${API}/api/frame`).then(r => r.ok ? r.json() : null).then(d => {
+      if (!dead && d) { frame = d; render(); }
+    }).catch(() => {});
+
+    const loadState = () => fetch(`${API}/api/state`).then(r => r.ok ? r.json() : null).then(d => {
+      if (!dead && d) { camera = d; render(); }
+    }).catch(() => {});
 
     const connect = () => {
       if (dead) return;
@@ -251,10 +283,17 @@ export default function ProjectionOverlay() {
       timer = window.setTimeout(poll, 100);
     };
 
+    const framePoll = () => {
+      if (dead) return;
+      loadFrame();
+      frameTimer = window.setTimeout(framePoll, 250);
+    };
+
     loadFrame();
     loadState();
     connect();
     poll();
+    framePoll();
 
     const observer = new MutationObserver(render);
     observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
@@ -266,6 +305,7 @@ export default function ProjectionOverlay() {
     return () => {
       dead = true;
       clearTimeout(timer);
+      clearTimeout(frameTimer);
       clearTimeout(reconnectTimer);
       ws?.close();
       observer.disconnect();
