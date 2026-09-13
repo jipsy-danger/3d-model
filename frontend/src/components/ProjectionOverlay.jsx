@@ -233,9 +233,12 @@ export default function ProjectionOverlay() {
         circle(twoSvg, q[0], q[1], 2.8, '#9bf5ff');
       });
 
-      // Same single backend/3D centroid, represented in current 2D screen space.
-      if (centroidScreen && Number.isFinite(Number(centroidScreen.x)) && Number.isFinite(Number(centroidScreen.y))) {
-        const q = xy({ x: Number(centroidScreen.x), y: Number(centroidScreen.y) });
+      // 2D uses the SAME centroid and the SAME X-axis rule as 1D:
+      // the centroid keeps its live projected X position, but its Y position is
+      // always the horizontal X-axis baseline. It must never move onto a Y-axis.
+      if (centroidScreen && Number.isFinite(Number(centroidScreen.x))) {
+        const centroidX = Number(centroidScreen.x);
+        const q = xy({ x: centroidX, y: hullCenterY });
         circle(twoSvg, q[0], q[1], 6, '#76ff91');
       }
     };
