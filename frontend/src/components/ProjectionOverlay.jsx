@@ -57,8 +57,6 @@ export default function ProjectionOverlay() {
       const one = document.querySelector('.one-d-space');
       const two = document.querySelector('.two-d-space');
       if (!one || !two) return null;
-      one.style.position = 'relative';
-      two.style.position = 'relative';
       hideDiagnostics(one);
       hideDiagnostics(two);
       if (!oneSvg || oneSvg.parentNode !== one) {
@@ -102,6 +100,17 @@ export default function ProjectionOverlay() {
       };
     };
 
+    const line = (svg, x1, y1, x2, y2, stroke, width, opacity = 1, dash = null) => {
+      const el = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      el.setAttribute('x1', x1); el.setAttribute('y1', y1);
+      el.setAttribute('x2', x2); el.setAttribute('y2', y2);
+      el.setAttribute('stroke', stroke);
+      el.setAttribute('stroke-width', width);
+      el.setAttribute('stroke-opacity', opacity);
+      if (dash) el.setAttribute('stroke-dasharray', dash);
+      svg.appendChild(el);
+    };
+
     const circle = (svg, cx, cy, r, fill) => {
       const el = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
       el.setAttribute('cx', cx); el.setAttribute('cy', cy); el.setAttribute('r', r); el.setAttribute('fill', fill);
@@ -127,6 +136,7 @@ export default function ProjectionOverlay() {
       const points = vertices.map(project);
       const axisButton = document.querySelector('.one-d-controls .axis-option.selected');
       const axis = ((axisButton?.textContent || 'X-AXIS').trim().toUpperCase().startsWith('Y')) ? 'y' : 'x';
+      const centroid = Array.isArray(frame.centroid) ? project(frame.centroid) : null;
 
       const ow = one.clientWidth, oh = one.clientHeight;
       const oneX = v => ow / 2 + v * ow / 2;
@@ -154,8 +164,13 @@ export default function ProjectionOverlay() {
         values.forEach(v => circle(oneSvg, axis === 'x' ? oneX(v) : ow / 2, axis === 'x' ? oh / 2 : oneY(v), 2.2, '#9bf5ff'));
       }
 
-      const centroid = Array.isArray(frame.centroid) ? project(frame.centroid) : null;
-      if (centroid) circle(oneSvg, oneX(centroid.x), oneY(centroid.y), 5, '#76ff91');
+      if (centroid) {
+        const cx = axis === 'x' ? oneX(centroid.x) : ow / 2;
+        const cy = axis === 'x' ? oh / 2 : oneY(centroid.y);
+        if (axis === 'x') line(oneSvg, cx, 0, cx, oh, '#76ff91', 1.5, .72, '4 4');
+        else line(oneSvg, 0, cy, ow, cy, '#76ff91', 1.5, .72, '4 4');
+        circle(oneSvg, cx, cy, 5, '#76ff91');
+      }
 
       const tw = two.clientWidth, th = two.clientHeight;
       const xy = p => [tw / 2 + p.x * tw / 2, th / 2 - p.y * th / 2];
@@ -173,13 +188,15 @@ export default function ProjectionOverlay() {
       EDGES.forEach(([a, b]) => {
         if (!points[a] || !points[b]) return;
         const A = xy(points[a]), B = xy(points[b]);
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', A[0]); line.setAttribute('y1', A[1]); line.setAttribute('x2', B[0]); line.setAttribute('y2', B[1]);
-        line.setAttribute('stroke', '#9bf5ff'); line.setAttribute('stroke-width', '1.5');
-        twoSvg.appendChild(line);
+        line(twoSvg, A[0], A[1], B[0], B[1], '#9bf5ff', 1.5);
       });
       points.filter(Boolean).forEach(p => { const q = xy(p); circle(twoSvg, q[0], q[1], 2.2, '#9bf5ff'); });
-      if (centroid) { const q = xy(centroid); circle(twoSvg, q[0], q[1], 5, '#76ff91'); }
+      if (centroid) {
+        const q = xy(centroid);
+        line(twoSvg, q[0], 0, q[0], th, '#76ff91', 1.2, .68, '4 4');
+        line(twoSvg, 0, q[1], tw, q[1], '#76ff91', 1.2, .68, '4 4');
+        circle(twoSvg, q[0], q[1], 5, '#76ff91');
+      }
     };
 
     const loadFrame = () => fetch(`${API}/api/frame`).then(r => r.ok ? r.json() : null).then(d => { if (!dead && d) { frame = d; render(); } }).catch(() => {});
