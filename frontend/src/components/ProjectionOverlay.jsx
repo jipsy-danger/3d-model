@@ -84,6 +84,8 @@ export default function ProjectionOverlay() {
 
     const clearSvg = svg => { while (svg.firstChild) svg.removeChild(svg.firstChild); };
 
+    // The 1D and 2D views use exactly the same camera projection as the 3D view.
+    // Raw cuboid vertices remain the single geometry source of truth.
     const project = vertex => {
       if (!camera?.position || !camera?.right || !camera?.up || !camera?.forward) return null;
       const p = [
@@ -101,12 +103,6 @@ export default function ProjectionOverlay() {
         x: dot(p, camera.right) / (depth * tanHalf * aspect),
         y: dot(p, camera.up) / (depth * tanHalf),
       };
-    };
-
-    const liveCentroid = () => {
-      const c = camera?.centroid_screen;
-      if (!c || !Number.isFinite(Number(c.x)) || !Number.isFinite(Number(c.y))) return null;
-      return { x: Number(c.x), y: Number(c.y) };
     };
 
     const line = (svg, x1, y1, x2, y2, stroke, width, opacity = 1, dash = null) => {
@@ -145,8 +141,9 @@ export default function ProjectionOverlay() {
       const points = vertices.map(project);
       const axisButton = document.querySelector('.one-d-controls .axis-option.selected');
       const axis = ((axisButton?.textContent || 'X-AXIS').trim().toUpperCase().startsWith('Y')) ? 'y' : 'x';
-      const projectedCentroid = liveCentroid() || (Array.isArray(frame.centroid) ? project(frame.centroid) : null);
+      const centroid = Array.isArray(frame.centroid) ? project(frame.centroid) : null;
 
+      // 1D: one spatial profile, with exactly one horizontal centroid axis in both modes.
       const ow = one.clientWidth, oh = one.clientHeight;
       const oneX = v => ow / 2 + v * ow / 2;
       const oneY = v => oh / 2 - v * oh / 2;
@@ -154,15 +151,13 @@ export default function ProjectionOverlay() {
       if (values.length) {
         const lo = Math.min(...values);
         const hi = Math.max(...values);
-        const a = axis === 'x' ? oneX(lo) : ow / 2 - 11;
-        const b = axis === 'x' ? oneX(hi) : oh / 2 - hi * oh / 2;
         const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
         if (axis === 'x') {
-          rect.setAttribute('x', a); rect.setAttribute('y', oh / 2 - 11);
-          rect.setAttribute('width', Math.max(2, b - a)); rect.setAttribute('height', 22);
+          rect.setAttribute('x', oneX(lo)); rect.setAttribute('y', oh / 2 - 11);
+          rect.setAttribute('width', Math.max(2, oneX(hi) - oneX(lo))); rect.setAttribute('height', 22);
         } else {
-          rect.setAttribute('x', ow / 2 - 11); rect.setAttribute('y', b);
-          rect.setAttribute('width', 22); rect.setAttribute('height', Math.max(2, (hi - lo) * oh / 2));
+          rect.setAttribute('x', ow / 2 - 11); rect.setAttribute('y', oneY(hi));
+          rect.setAttribute('width', 22); rect.setAttribute('height', Math.max(2, oneY(lo) - oneY(hi)));
         }
         rect.setAttribute('fill', '#788f98');
         rect.setAttribute('fill-opacity', '.92');
@@ -173,36 +168,49 @@ export default function ProjectionOverlay() {
         values.forEach(v => circle(oneSvg, axis === 'x' ? oneX(v) : ow / 2, axis === 'x' ? oh / 2 : oneY(v), 2.2, '#9bf5ff'));
       }
 
-      // There is exactly one 1D centroid axis: the horizontal X-axis.
-      // X-axis and Y-axis modes both keep the same centroid on that horizontal axis.
-      if (projectedCentroid) {
-        const cx = axis === 'x' ? oneX(projectedCentroid.x) : ow / 2;
+      // Exactly one centroid marker and one horizontal centroid line in 1D.
+      if (centroid) {
+        const cx = axis === 'x' ? oneX(centroid.x) : ow / 2;
         const cy = oh / 2;
         line(oneSvg, 0, cy, ow, cy, '#76ff91', 1.5, .72, '4 4');
         circle(oneSvg, cx, cy, 5, '#76ff91');
       }
 
+      // 2D: exact screen-space projection of the same eight 3D cuboid vertices.
+      // Preserve the camera projection's aspect ratio instead of stretching X/Y independently.
       const tw = two.clientWidth, th = two.clientHeight;
-      const xy = p => [tw / 2 + p.x * tw / 2, th / 2 - p.y * th / 2];
+      const scale = Math.min(tw, th) / 2;
+      const centerX = tw / 2;
+      const centerY = th / 2;
+      const xy = p => [centerX + p.x * scale, centerY - p.y * scale];
+
+      // Draw the six projected cuboid faces first, then the twelve projected edges.
       FACES.forEach((face, fi) => {
         const pp = face.map(i => points[i]);
         if (pp.some(p => !p)) return;
         const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
         poly.setAttribute('points', pp.map(xy).map(p => p.join(',')).join(' '));
         poly.setAttribute('fill', '#788f98');
-        poly.setAttribute('fill-opacity', String(.22 + fi * .015));
+        poly.setAttribute('fill-opacity', String(.18 + fi * .012));
         poly.setAttribute('stroke', '#9bf5ff');
         poly.setAttribute('stroke-width', '1.2');
         twoSvg.appendChild(poly);
       });
+
       EDGES.forEach(([a, b]) => {
         if (!points[a] || !points[b]) return;
         const A = xy(points[a]), B = xy(points[b]);
         line(twoSvg, A[0], A[1], B[0], B[1], '#9bf5ff', 1.5);
       });
-      points.filter(Boolean).forEach(p => { const q = xy(p); circle(twoSvg, q[0], q[1], 2.2, '#9bf5ff'); });
-      if (projectedCentroid) {
-        const q = xy(projectedCentroid);
+
+      points.filter(Boolean).forEach(p => {
+        const q = xy(p);
+        circle(twoSvg, q[0], q[1], 2.2, '#9bf5ff');
+      });
+
+      // One and only one 2D centroid: the same backend/3D centroid projected by the same camera.
+      if (centroid) {
+        const q = xy(centroid);
         circle(twoSvg, q[0], q[1], 6, '#76ff91');
       }
     };
